@@ -159,7 +159,7 @@ Note: YouTube has separated video and audio streams, so the trailer might play w
 -Dependencies: python3-requests, python3-six
 
 # File Structure
-text
+bash
 /usr/lib/enigma2/python/Plugins/Extensions/CiefpEPGinfo/
 ├── __init__.py
 ├── plugin.py
@@ -180,7 +180,8 @@ text
 ├── tmdbapikey.txt
 ├── omdbapikey.txt
 └── groqapikey.txt
-🔄 Update
+
+# 🔄 Update
 The plugin automatically checks for a new version upon opening. If an update is available:
 
 text
@@ -199,41 +200,40 @@ wget -q "--no-check-certificate" https://raw.githubusercontent.com/ciefp/CiefpEP
 Trailer without sound
 YouTube has separated the video and audio streams. `yt-dlp -f best` returns only the video. The solution would be `yt-dlp -f bestvideo+bestaudio`, but that requires `ffmpeg` for merging, which Enigma2 usually lacks.
 
-Arabic translation
+# Arabic translation
 Enigma2 does not support RTL (right-to-left) text. Therefore, the Arabic translation uses transliteration (Latin script). Posters for new movies
 If TMDB doesn't have a poster for a new movie yet, the movie.png placeholder is displayed.
 
-📝 Changelog
+# 📝 Changelog
 v1.2 (current)
-✨ Automatic update check from GitHub
-✨ Smart TMDB search (title similarity)
-✨ Skip generic titles
-✨ Arabic translation (transliteration)
-✨ Non-TMDB detection using word boundaries
-✨ docu.png placeholder
-✨ movie.png / series.png placeholder
-🐛 Fixed PiconManager (.toString())
-🐛 Fixed detect_non_tmdb (word boundary)
-🎨 New FHD Settings skin
+- ✨ Automatic update check from GitHub
+- ✨ Smart TMDB search (title similarity)
+- ✨ Skip generic titles
+- ✨ Arabic translation (transliteration)
+- ✨ Non-TMDB detection using word boundaries
+- ✨ docu.png placeholder
+- ✨ movie.png / series.png placeholder
+- 🐛 Fixed PiconManager (.toString())
+- 🐛 Fixed detect_non_tmdb (word boundary)
+- 🎨 New FHD Settings skin
 
 v1.0 (initial)
-🎉 First version
-📺 EPG list
-🎬 TMDB integration
+- 🎉 First version
+- 📺 EPG list
+- 🎬 TMDB integration
 
-⭐ OMDb/IMDB
-🌍 GROQ translation
-🎭 Cast 2×5
-🎥 Filmography Browser
-▶️ Trailer
+- ⭐ OMDb/IMDB
+- 🌍 GROQ translation
+- 🎭 Cast 2×5
+- 🎥 Filmography Browser
+- ▶️ Trailer
 
-⚙️ Settings
-
+#⚙️ Settings
 🙏 Acknowledgments
 ciefp – plugin author
-TMDB – https://www.themoviedb.org
-OMDb – https://www.omdbapi.com
-GROQ – https://groq.com
+- TMDB – https://www.themoviedb.org
+- OMDb – https://www.omdbapi.com
+- GROQ – https://groq.com
 
 Enigma2 community – for support
 
@@ -241,8 +241,8 @@ Enigma2 community – for support
 MIT License – free to use, modify, and distribute.
 
 🔗 Links
-GitHub: https://github.com/ciefp/CiefpEPGinfo
-Issues: https://github.com/ciefp/CiefpEPGinfo/issues
-Installer: https://raw.githubusercontent.com/ciefp/CiefpEPGinfo/main/installer.sh
+- GitHub: https://github.com/ciefp/CiefpEPGinfo
+- Issues: https://github.com/ciefp/CiefpEPGinfo/issues
+- Installer: https://raw.githubusercontent.com/ciefp/CiefpEPGinfo/main/installer.sh
 
 Enjoy the plugin! 🎬🚀
