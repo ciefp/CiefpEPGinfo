@@ -74,28 +74,28 @@ The plugin will automatically load them upon startup.
 
 # 🎮 Buttons
 Button	Action
-Exit (red)	Close plugin
-Filmography (green)	Filmography Browser
-Cast explore (yellow)	Cast Explorer
-Settings (blue)	Open Settings
-Info:Trailers (purple)	Play YouTube trailer
-MENU	Open Settings
-OK	Show details for selected EPG event
-UP/DOWN	Navigate EPG list
-BACK	Return to previous movie / close
+- Exit (red)	Close plugin
+- Filmography (green)	Filmography Browser
+- Cast explore (yellow)	Cast Explorer
+- Settings (blue)	Open Settings
+- Info:Trailers (purple)	Play YouTube trailer
+- MENU	Open Settings
+- OK	Show details for selected EPG event
+- UP/DOWN	Navigate EPG list
+- BACK	Return to previous movie / close
 
 # ⚙️ Settings
 Option	Description
-TMDB API Key	TMDB key
-OMDb API Key	OMDb key (IMDb ratings)
-GROQ API Key	GROQ key (translation)
-GROQ Model	Translation model (GPT-OSS, Llama, Qwen, ...)
-Cache folder	Folder for storing posters
-Download Posters	YES/NO
-Show IMDB Rating	YES/NO
-Description lang	Language for TMDB description (en-US, sr-RS, ...)
-GROQ Translate	YES/NO – main switch
-Translate to	Translation language (sr, hr, en, ar, ...)
+- TMDB API Key	TMDB key
+- OMDb API Key	OMDb key (IMDb ratings)
+- GROQ API Key	GROQ key (translation)
+- GROQ Model	Translation model (GPT-OSS, Llama, Qwen, ...)
+- Cache folder	Folder for storing posters
+- Download Posters	YES/NO
+- Show IMDB Rating	YES/NO
+- Description lang	Language for TMDB description (en-US, sr-RS, ...)
+- GROQ Translate	YES/NO – main switch
+- Translate to	Translation language (sr, hr, en, ar, ...)
 → EPG description	Translate EPG description
 → TMDB Plot	Translate TMDB description
 → Biography	Translate actor biography
