@@ -1,7 +1,4 @@
-📄 README.md za CiefpEPGinfo v1.2
-Evo kompletnog README-a spreman za kopiranje na GitHub:
-
-markdown
+📄 README.md for CiefpEPGinfo v1.2
 # CiefpEPGinfo
 
 ![Version](https://img.shields.io/badge/version-1.2-blue.svg)
@@ -9,240 +6,171 @@ markdown
 ![Enigma2](https://img.shields.io/badge/enigma2-plugin-orange.svg)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey.svg)
 
-**CiefpEPGinfo** – FHD EPG Info plugin sa TMDB/OMDb enrichment-om i GROQ AI prevodom.
+**CiefpEPGinfo** – An FHD EPG Info plugin featuring TMDB/OMDb data enrichment and GROQ AI translation.
 
-Prikazuje EPG listu za trenutni kanal na levoj strani, a detaljne informacije o filmu/seriji na desnoj strani (poster, ocene, žanr, režiser, opis, glumci). Automatski povlači podatke sa TMDB-a i OMDb-a, sa opcijom prevođenja opisa preko GROQ AI.
-
-![CiefpEPGinfo Main Screen](screenshots/main.png)
+It displays the EPG list for the current channel on the left and detailed information about the movie or series on the right 
+(poster, ratings, genre, director, description, cast). 
+It automatically fetches data from TMDB and OMDb, with an option to translate descriptions using GROQ AI.
+ ![CiefpEPGinfo Main Screen](screenshots/main.png)
 
 ---
 
-## ✨ Funkcionalnosti
+## ✨ Features
 
-- 📺 **EPG lista** – trenutni + narednih 11 događaja
-- 🎬 **TMDB integracija** – poster, ocena, žanr, režiser, opis, glumci
-- ⭐ **IMDB ocena** preko OMDb API-ja
-- 🌍 **GROQ AI prevod** – 20+ jezika, sa cache-om
-- 🎭 **Cast 2×5** – prikaz glumaca u dve kolone
-- 🎥 **Filmography Browser** – istraživanje filmografije glumaca
-- 👥 **Cast Explorer** – detalji o glumcu u istom ekranu
-- ▶️ **Trailer** – YouTube trailer preko yt-dlp (Info dugme)
-- 🖼️ **Pametni placeholderi** – sport, news, music, kids, docu, movie, series
-- 🚫 **Non-TMDB detekcija** – sport, vesti, muzika, dečiji, dokumentarci
-- 🔍 **Pametna TMDB pretraga** – title similarity (ne samo popularity)
-- 🛡️ **Generic titles skip** – ne ide na TMDB za "Vesti", "Dnevnik"...
-- 💾 **Cache** – čuva postere i prevode
-- 🔄 **Auto update** – provera nove verzije sa GitHub-a
-- 🎨 **FHD skin** – 1920×1080
-- 🖼️ **PiconManager** – podrška za `/picon/` i `/picon/logos/`
+- 📺 **EPG List** – current + next 11 events
+- 🎬 **TMDB Integration** – poster, rating, genre, director, description, cast
+- ⭐ **IMDb Rating** via OMDb API
+- 🌍 **GROQ AI Translation** – 20+ languages, with caching
+- 🎭 **Cast 2×5** – cast display in two columns
+- 🎥 **Filmography Browser** – explore actor filmography
+- 👥 **Cast Explorer** – actor details on the same screen
+- ▶️ **Trailer** – YouTube trailer via yt-dlp (Info button)
+- 🖼️ **Smart Placeholders** – sports, news, music, kids, documentary, movie, series
+- 🚫 **Non-TMDB Detection** – sports, news, music, kids, documentaries
+- 🔍 **Smart TMDB Search** – title similarity (not just popularity)
+- 🛡️ **Generic Title Skip** – skips TMDB lookup for "News", "Daily News", etc.
+- 💾 **Cache** – stores posters and translations
+- 🔄 **Auto-update** – checks for new versions on GitHub
+- 🎨 **FHD Skin** – 1920×1080
+- 🖼️ **PiconManager** – support for `/picon/` and `/picon/logos/`
 
 ---
 
 ## 📸 Screenshots
 
-### Glavni ekran – Film
-![Film](screenshots/film.png)
+### Main Screen – Movie
+![Movie](https://i.postimg.cc/2jLn3VBD/ciefpepginfo-1.jpg)
 
-### Glavni ekran – Serija
-![Serija](screenshots/series.png)
+### Main Screen – Series
+![Series](https://i.postimg.cc/QMnWd38V/ciefpepginfo-2.jpg)
 
-### Profil glumca
-![Actor](screenshots/actor.png)
+### Actor Profile
+![Actor](https://i.postimg.cc/R08NzLdn/ciefpepginfo-3.jpg)
 
 ### Filmography Browser
-![Filmography](screenshots/filmography.png)
+![Filmography](https://i.postimg.cc/GtR3c7sW/ciefpepginfo-5.jpg)
 
 ### Settings
-![Settings](screenshots/settings.png)
+![Settings](https://i.postimg.cc/j5HKkHkh/ciefpepginfo-6.jpg)
 
-### Non-TMDB sadržaj (Sport / News)
-![Sport](screenshots/sport.png)
+### Non-TMDB content (Sport)
+![Sport](https://i.postimg.cc/X7hhdZsc/ciefpepginfo-7.jpg)
 
----
+# 🔑 Configuration
+When you open the plugin for the first time, go to Settings (blue button) and enter the API keys:
 
-## 🔧 Instalacija
+Key	Where to get it	Free? 
+- TMDB API Key	https://www.themoviedb.org/settings/api	✅ Yes
+- OMDb API Key	https://www.omdbapi.com/apikey.aspx	✅ Yes (1000/day)
+- GROQ API Key	https://console.groq.com/keys	✅ Yes
 
-### Automatska instalacija (preporučeno)
+Alternative – files
+You can also manually create files in the plugin folder:
 
-Pokreni u SSH:
+- /usr/lib/enigma2/python/Plugins/Extensions/CiefpEPGinfo/tmdbapikey.txt
+- /usr/lib/enigma2/python/Plugins/Extensions/CiefpEPGinfo/omdbapikey.txt
+- /usr/lib/enigma2/python/Plugins/Extensions/CiefpEPGinfo/groqapikey.txt
+The plugin will automatically load them upon startup. 
 
-```bash
-wget -q "--no-check-certificate" https://raw.githubusercontent.com/ciefp/CiefpEPGinfo/main/installer.sh -O - | /bin/sh
-Installer će:
+# 🎮 Buttons
+Button	Action
+Exit (red)	Close plugin
+Filmography (green)	Filmography Browser
+Cast explore (yellow)	Cast Explorer
+Settings (blue)	Open Settings
+Info:Trailers (purple)	Play YouTube trailer
+MENU	Open Settings
+OK	Show details for selected EPG event
+UP/DOWN	Navigate EPG list
+BACK	Return to previous movie / close
 
-Proveriti Python verziju (2/3)
-
-Instalirati potrebne pakete (python3-requests, python3-six)
-
-Preuzeti plugin sa GitHub-a
-
-Restartovati Enigmu
-
-Manualna instalacija
-Preuzmi main.tar.gz sa GitHub-a:
-
-bash
-wget https://github.com/ciefp/CiefpEPGinfo/archive/refs/heads/main.tar.gz
-Raspakuj:
-
-bash
-tar -xzf main.tar.gz
-Kopiraj u Enigma2:
-
-bash
-cp -r CiefpEPGinfo-main/usr /
-Restartuj Enigmu:
-
-bash
-killall -9 enigma2
-🔑 Konfiguracija
-Kada prvi put otvoriš plugin, idi u Settings (plavo dugme) i unesi API ključeve:
-
-Ključ	Gde nabaviti	Besplatno?
-TMDB API Key	https://www.themoviedb.org/settings/api	✅ Da
-OMDb API Key	https://www.omdbapi.com/apikey.aspx	✅ Da (1000/dan)
-GROQ API Key	https://console.groq.com/keys	✅ Da
-Alternativa – fajlovi
-Možeš i ručno da kreiraš fajlove u folderu plugina:
-
-/usr/lib/enigma2/python/Plugins/Extensions/CiefpEPGinfo/tmdbapikey.txt
-
-/usr/lib/enigma2/python/Plugins/Extensions/CiefpEPGinfo/omdbapikey.txt
-
-/usr/lib/enigma2/python/Plugins/Extensions/CiefpEPGinfo/groqapikey.txt
-
-Plugin će ih automatski učitati pri startu.
-
-🎮 Tasteri
-Taster	Akcija
-Exit (crveno)	Zatvori plugin
-Filmography (zeleno)	Filmography Browser
-Cast explore (žuto)	Cast Explorer
-Settings (plavo)	Otvori Settings
-Info:Trailers (ljubičasto)	Pusti YouTube trailer
-MENU	Otvori Settings
-OK	Prikaži detalje za odabrani EPG događaj
-UP/DOWN	Navigacija kroz EPG listu
-BACK	Vrati se na prethodni film / zatvori
-⚙️ Settings
-Opcija	Opis
-TMDB API Key	Ključ za TMDB
-OMDb API Key	Ključ za OMDb (IMDB ocene)
-GROQ API Key	Ključ za GROQ (prevod)
-GROQ Model	Model za prevod (GPT-OSS, Llama, Qwen, ...)
-Cache folder	Folder za čuvanje postera
+# ⚙️ Settings
+Option	Description
+TMDB API Key	TMDB key
+OMDb API Key	OMDb key (IMDb ratings)
+GROQ API Key	GROQ key (translation)
+GROQ Model	Translation model (GPT-OSS, Llama, Qwen, ...)
+Cache folder	Folder for storing posters
 Download Posters	YES/NO
 Show IMDB Rating	YES/NO
-Description lang	Jezik za TMDB opis (en-US, sr-RS, ...)
-GROQ Translate	YES/NO – glavni prekidač
-Translate to	Jezik prevoda (sr, hr, en, ar, ...)
-→ EPG description	Prevod EPG opisa
-→ TMDB Plot	Prevod TMDB opisa
-→ Biography	Prevod biografije glumca
-→ Titles	Prevod naslova (sporije)
-Cache size	Prikaz veličine cache-a
-CLEAR CACHE	Briše sve postere iz cache-a
-Manual Update	Ručna provera nove verzije
-🌍 Podržani jezici prevoda
-🇷🇸 Srpski (sr)
+Description lang	Language for TMDB description (en-US, sr-RS, ...)
+GROQ Translate	YES/NO – main switch
+Translate to	Translation language (sr, hr, en, ar, ...)
+→ EPG description	Translate EPG description
+→ TMDB Plot	Translate TMDB description
+→ Biography	Translate actor biography
+→ Titles	Translate titles (slower)
+Cache size	Display cache size
+CLEAR CACHE	Delete all posters from cache
+Manual Update	Manually check for new version
 
-🇭🇷 Hrvatski (hr)
+# 🌍 Supported translation languages
+🇷🇸 Serbian (sr)
+🇭🇷 Croatian (hr)
+🇧🇦 Bosnian (bs)
+🇸🇮 Slovenian (sl)
+🇲🇰 Macedonian (mk)
+🇬🇧 English (en)
+🇩🇪 German (de)
+🇫🇷 French (fr)
+🇪🇸 Spanish (es)
+🇮🇹 Italian (it)
+🇷🇺 Russian (ru)
+🇵🇹 Portuguese (pt)
+🇵🇱 Polish (pl)
+🇨🇿 Czech (cs)
+🇭🇺 Hungarian (hu)
+🇷🇴 Romanian (ro)
+🇧🇬 Bulgarian (bg)
+🇬🇷 Greek (el)
+🇹🇷 Turkish (tr)
+🇳🇱 Dutch (nl)
+🇸🇪 Swedish (sv)
+🇸🇦 Arabic (ar) – transliteration
 
-🇧🇦 Bosanski (bs)
+# 🎯 Non-TMDB detection
+The plugin automatically recognizes content that is not on TMDB:
 
-🇸🇮 Slovenački (sl)
+Category	Placeholder	Keyword examples
+Sport	sport.png	football, soccer, tennis, basketball, league, hockey, ...
+Music	music.png	music, concert, music, festival, ...
+News	news.png	news, daily news, news, nachrichten, ...
+Kids	kids.png	kids, children's, cartoons, ...
+Documentaries	docu.png	documentary, document, ...
+Movies	movie.png	if found on TMDB but no poster exists
+Series	series.png	if found on TMDB but no poster exists
+Uses `\b` (word boundary) for detection – so "ski" doesn't match "televizijskih" (television).
 
-🇲🇰 Makedonski (mk)
-
-🇬🇧 Engleski (en)
-
-🇩🇪 Nemački (de)
-
-🇫🇷 Francuski (fr)
-
-🇪🇸 Španski (es)
-
-🇮🇹 Italijanski (it)
-
-🇷🇺 Ruski (ru)
-
-🇵🇹 Portugalski (pt)
-
-🇵🇱 Poljski (pl)
-
-🇨🇿 Češki (cs)
-
-🇭🇺 Mađarski (hu)
-
-🇷🇴 Rumunski (ro)
-
-🇧🇬 Bugarski (bg)
-
-🇬🇷 Grčki (el)
-
-🇹🇷 Turski (tr)
-
-🇳🇱 Holandski (nl)
-
-🇸🇪 Švedski (sv)
-
-🇸🇦 Arapski (ar) – transliteracija
-
-🎯 Non-TMDB detekcija
-Plugin automatski prepoznaje sadržaj koji nije na TMDB-u:
-
-Kategorija	Placeholder	Primeri keyword-a
-Sport	sport.png	football, fudbal, tenis, košarka, liga, hokej, ...
-Muzika	music.png	music, koncert, muzika, festival, ...
-Vesti	news.png	vesti, dnevnik, news, nachrichten, ...
-Dečiji	kids.png	kids, dečiji, crtani, ...
-Dokumentarci	docu.png	documentary, dokument, ...
-Filmovi	movie.png	ako TMDB nađe ali nema poster
-Serije	series.png	ako TMDB nađe ali nema poster
-Za detekciju koristi \b word boundary – tako da "ski" ne pogađa "televizijskih".
-
-🔍 Pametna TMDB pretraga
-Umesto da bira rezultat po popularnosti, plugin koristi kombinaciju:
-
-Sličnost naslova (70%) – najvažnije
-
-Godina (30% bonus ako se poklapa)
-
+# 🔍 Smart TMDB Search
+Instead of selecting the result based solely on popularity, the plugin uses a combination of:
+Title similarity (70%) – most important
+Year (30% bonus for a match)
 Popularity (max 20%)
-
 Vote count (max 10%)
+If the best result has a similarity score < 0.5, it is rejected, and the plugin displays only the EPG.
 
-Ako je najbolji rezultat sličnost < 0.5 – odbija se i plugin prikazuje EPG samo.
+# Generic titles
+The plugin skips TMDB for generic titles (News, Daily News, Program, ...) and immediately displays a placeholder.
 
-Generic titles
-Plugin preskače TMDB za generičke naslove (Vesti, Dnevnik, Program, ...) i odmah prikazuje placeholder.
+# 🎬 Filmography Browser
+Clicking the green button opens a ChoiceBox listing the actors from the current movie. Then:
+Select actor → ChoiceBox with their 10 most famous movies + 10 series
+Select movie → displayed on the main screen (poster, ratings, description, cast)
+BACK → returns to the original movie
 
-🎬 Filmography Browser
-Klikom na zeleno dugme otvara se ChoiceBox sa glumcima iz trenutnog filma. Zatim:
+# 🎥 Trailer
+Clicking the Info button (purple) launches the YouTube trailer via yt-dlp.
 
-Izbor glumca → ChoiceBox sa 10 najpoznatijih filmova + 10 serija
+Note: YouTube has separated video and audio streams, so the trailer might play without sound. This is a current limitation of YouTube. 🛠️ Technical Details
 
-Izbor filma → prikazuje se u glavnom ekranu (poster, ocene, opis, cast)
-
-BACK → vraća se na originalni film
-
-🎥 Trailer
-Klikom na Info dugme (ljubičasto) pokreće se YouTube trailer preko yt-dlp.
-
-Napomena: YouTube je odvojio video i audio stream, tako da trailer može da radi bez zvuka. To je trenutno ograničenje YouTube-a.
-
-🛠️ Tehnički detalji
-Python: 3.x
+# Python: 3.x
 
 Enigma2: OpenPLi, OpenATV, OpenBH, VTi, DreamOS
+Resolution: FHD 1920×1080
+Fonts: Regular, Bold, Console
+Dependencies: python3-requests, python3-six
 
-Rezolucija: FHD 1920×1080
-
-Fontovi: Regular, Bold, Console
-
-Zavisnosti: python3-requests, python3-six
-
-Struktura fajlova
+# File Structure
 text
 /usr/lib/enigma2/python/Plugins/Extensions/CiefpEPGinfo/
 ├── __init__.py
@@ -265,90 +193,68 @@ text
 ├── omdbapikey.txt
 └── groqapikey.txt
 🔄 Update
-Plugin automatski proverava novu verziju pri otvaranju. Ako je dostupan update:
+The plugin automatically checks for a new version upon opening. If an update is available:
 
 text
 New version: v1.3
 Install now?
 [Yes] [No]
-Za manual update:
+For manual update:
 
 Settings → Manual Update
 
-Ili preko SSH:
+Or via SSH:
 
 bash
 wget -q "--no-check-certificate" https://raw.githubusercontent.com/ciefp/CiefpEPGinfo/main/installer.sh -O - | /bin/sh
-🐛 Poznati problemi
-Trailer bez zvuka
-YouTube je razdvojio video i audio stream. yt-dlp -f best vraća samo video. Rešenje bi bilo yt-dlp -f bestvideo+bestaudio, ali to zahteva ffmpeg za merge, što Enigma2 obično nema.
+🐛 Known Issues
+Trailer without sound
+YouTube has separated the video and audio streams. `yt-dlp -f best` returns only the video. The solution would be `yt-dlp -f bestvideo+bestaudio`, but that requires `ffmpeg` for merging, which Enigma2 usually lacks.
 
-Arapski prevod
-Enigma2 ne podržava RTL (right-to-left) tekst. Zato arapski prevod koristi transliteraciju (latinica).
-
-Poster nekih novih filmova
-Ako TMDB još nema poster za novi film, prikazuje se movie.png placeholder.
+Arabic translation
+Enigma2 does not support RTL (right-to-left) text. Therefore, the Arabic translation uses transliteration (Latin script). Posters for new movies
+If TMDB doesn't have a poster for a new movie yet, the movie.png placeholder is displayed.
 
 📝 Changelog
-v1.2 (aktuelna)
-✨ Auto update check sa GitHub-a
-
-✨ Pametna TMDB pretraga (title similarity)
-
-✨ Generic titles skip
-
-✨ Arapski prevod (transliteracija)
-
-✨ Non-TMDB detekcija sa word boundary
-
+v1.2 (current)
+✨ Automatic update check from GitHub
+✨ Smart TMDB search (title similarity)
+✨ Skip generic titles
+✨ Arabic translation (transliteration)
+✨ Non-TMDB detection using word boundaries
 ✨ docu.png placeholder
-
 ✨ movie.png / series.png placeholder
+🐛 Fixed PiconManager (.toString())
+🐛 Fixed detect_non_tmdb (word boundary)
+🎨 New FHD Settings skin
 
-🐛 Popravljen PiconManager (.toString())
-
-🐛 Popravljen detect_non_tmdb (word boundary)
-
-🎨 Novi FHD Settings skin
-
-v1.0 (inicijalna)
-🎉 Prva verzija
-
-📺 EPG lista
-
-🎬 TMDB integracija
+v1.0 (initial)
+🎉 First version
+📺 EPG list
+🎬 TMDB integration
 
 ⭐ OMDb/IMDB
-
-🌍 GROQ prevod
-
+🌍 GROQ translation
 🎭 Cast 2×5
-
 🎥 Filmography Browser
-
 ▶️ Trailer
 
 ⚙️ Settings
 
-🙏 Zahvalnice
-ciefp – autor plugina
-
+🙏 Acknowledgments
+ciefp – plugin author
 TMDB – https://www.themoviedb.org
-
 OMDb – https://www.omdbapi.com
-
 GROQ – https://groq.com
 
-Enigma2 community – za podršku
+Enigma2 community – for support
 
-📜 Licenca
-MIT License – slobodno koristi, menja i distribuira.
+📜 License
+MIT License – free to use, modify, and distribute.
 
-🔗 Linkovi
+🔗 Links
 GitHub: https://github.com/ciefp/CiefpEPGinfo
-
 Issues: https://github.com/ciefp/CiefpEPGinfo/issues
-
 Installer: https://raw.githubusercontent.com/ciefp/CiefpEPGinfo/main/installer.sh
 
-Uživaj u plugin-u! 🎬🚀
+Enjoy the plugin! 🎬🚀
