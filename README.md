@@ -158,30 +158,6 @@ Note: YouTube has separated video and audio streams, so the trailer might play w
 - Fonts: Regular, Bold, Console
 -Dependencies: python3-requests, python3-six
 
-# File Structure
-bash
-/usr/lib/enigma2/python/Plugins/Extensions/CiefpEPGinfo/
-├── __init__.py
-├── plugin.py
-├── components/
-│   ├── __init__.py
-│   ├── picon_manager.py
-│   └── translator.py
-├── icon.png
-├── placeholder.png
-├── sport.png
-├── music.png
-├── news.png
-├── kids.png
-├── docu.png
-├── movie.png
-├── series.png
-├── settings.png
-├── tmdbapikey.txt
-├── omdbapikey.txt
-└── groqapikey.txt
-/bash
-
 # 🔄 Update
 The plugin automatically checks for a new version upon opening. If an update is available:
 
@@ -189,15 +165,8 @@ text
 New version: v1.3
 Install now?
 [Yes] [No]
-For manual update:
 
-Settings → Manual Update
-
-Or via SSH:
-
-bash
-wget -q "--no-check-certificate" https://raw.githubusercontent.com/ciefp/CiefpEPGinfo/main/installer.sh -O - | /bin/sh
-🐛 Known Issues
+# 🐛 Known Issues
 Trailer without sound
 YouTube has separated the video and audio streams. `yt-dlp -f best` returns only the video. The solution would be `yt-dlp -f bestvideo+bestaudio`, but that requires `ffmpeg` for merging, which Enigma2 usually lacks.
 
