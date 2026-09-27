@@ -11,7 +11,7 @@
 It displays the EPG list for the current channel on the left and detailed information about the movie or series on the right 
 (poster, ratings, genre, director, description, cast). 
 It automatically fetches data from TMDB and OMDb, with an option to translate descriptions using GROQ AI.
- ![CiefpEPGinfo Main Screen](screenshots/main.png)
+ ![CiefpEPGinfo Main Screen](https://i.postimg.cc/T3bRDvJp/1-0-19-3398-C9D-3-EB0000-0-0-0-20260927131601.jpg)
 
 ---
 
@@ -132,31 +132,19 @@ Manual Update	Manually check for new version
 The plugin automatically recognizes content that is not on TMDB:
 
 Category	Placeholder	Keyword examples
-Sport	sport.png	football, soccer, tennis, basketball, league, hockey, ...
-Music	music.png	music, concert, music, festival, ...
-News	news.png	news, daily news, news, nachrichten, ...
-Kids	kids.png	kids, children's, cartoons, ...
-Documentaries	docu.png	documentary, document, ...
-Movies	movie.png	if found on TMDB but no poster exists
-Series	series.png	if found on TMDB but no poster exists
-Uses `\b` (word boundary) for detection – so "ski" doesn't match "televizijskih" (television).
-
-# 🔍 Smart TMDB Search
-Instead of selecting the result based solely on popularity, the plugin uses a combination of:
-Title similarity (70%) – most important
-Year (30% bonus for a match)
-Popularity (max 20%)
-Vote count (max 10%)
-If the best result has a similarity score < 0.5, it is rejected, and the plugin displays only the EPG.
-
-# Generic titles
-The plugin skips TMDB for generic titles (News, Daily News, Program, ...) and immediately displays a placeholder.
+- Sport	sport.png	football, soccer, tennis, basketball, league, hockey, ...
+- Music	music.png	music, concert, music, festival, ...
+- News	news.png	news, daily news, news, nachrichten, ...
+- Kids	kids.png	kids, children's, cartoons, ...
+- Documentaries	docu.png	documentary, document, ...
+- Movies	movie.png	if found on TMDB but no poster exists
+- Series	series.png	if found on TMDB but no poster 
 
 # 🎬 Filmography Browser
 Clicking the green button opens a ChoiceBox listing the actors from the current movie. Then:
-Select actor → ChoiceBox with their 10 most famous movies + 10 series
-Select movie → displayed on the main screen (poster, ratings, description, cast)
-BACK → returns to the original movie
+- Select actor → ChoiceBox with their 10 most famous movies + 10 series
+- Select movie → displayed on the main screen (poster, ratings, description, cast)
+- BACK → returns to the original movie
 
 # 🎥 Trailer
 Clicking the Info button (purple) launches the YouTube trailer via yt-dlp.
@@ -165,10 +153,10 @@ Note: YouTube has separated video and audio streams, so the trailer might play w
 
 # Python: 3.x
 
-Enigma2: OpenPLi, OpenATV, OpenBH, VTi, DreamOS
-Resolution: FHD 1920×1080
-Fonts: Regular, Bold, Console
-Dependencies: python3-requests, python3-six
+- Enigma2: OpenPLi, OpenATV, OpenBH, VTi, DreamOS
+- Resolution: FHD 1920×1080
+- Fonts: Regular, Bold, Console
+-Dependencies: python3-requests, python3-six
 
 # File Structure
 text
