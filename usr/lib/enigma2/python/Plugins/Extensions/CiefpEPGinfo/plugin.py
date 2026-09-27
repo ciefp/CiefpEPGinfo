@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 #
 # CiefpEPGinfo - FHD EPG Info plugin with TMDB/OMDb enrichment
-# Verzija: 1.0
 #
 from __future__ import print_function
 import os
@@ -130,7 +129,7 @@ config.plugins.ciefpepginfo.translate_titles = ConfigYesNo(default=False)       
 
 PLUGIN_NAME = "CiefpEPGinfo"
 PLUGIN_DESC = "FHD EPG Info with TMDB/OMDb enrichment"
-PLUGIN_VERSION = "1.0"
+PLUGIN_VERSION = "1.1"
 PLUGIN_DIR = os.path.dirname(__file__) if '__file__' in globals() else \
     "/usr/lib/enigma2/python/Plugins/Extensions/CiefpEPGinfo"
 
@@ -910,6 +909,7 @@ class CiefpEPGinfoMain(Screen):
         self.epg_refresh_timer.callback.append(self.refresh_epg)
         self.epg_refresh_timer.start(60000)  # svakih 60s
 
+        self.onLayoutFinish.append(self._check_for_updates)
         self.onLayoutFinish.append(self.on_start)
         self.onClose.append(self.__onClose)
         self._saved_media_state = None  # Za povratak sa profila osobe
@@ -951,6 +951,53 @@ class CiefpEPGinfoMain(Screen):
         px = load_pixmap_safe(PLACEHOLDER)
         if px and self["poster"].instance:
             self["poster"].instance.setPixmap(px)
+    # ---------- Update plugin ------------
+    def _check_for_updates(self):
+        """Provera nove verzije sa GitHub-a"""
+        try:
+            print(f"[CiefpEPGinfo] Checking for updates...")
+
+            # Učitaj version.txt sa GitHub-a
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+
+            req = urllib.request.Request(
+                VERSION_URL,
+                headers={"User-Agent": "CiefpEPGinfo/" + PLUGIN_VERSION}
+            )
+            with urllib.request.urlopen(req, context=ctx, timeout=10) as resp:
+                remote_version = resp.read().decode("utf-8", errors="ignore").strip()
+
+            print(f"[CiefpEPGinfo] Local version: {PLUGIN_VERSION}, remote: {remote_version}")
+
+            # Ako je remote verzija različita → ima update
+            if remote_version and remote_version != PLUGIN_VERSION:
+                msg = (f"New version available!\n\n"
+                       f"Local:  v{PLUGIN_VERSION}\n"
+                       f"Remote: v{remote_version}\n\n"
+                       f"Update now?")
+                self.session.openWithCallback(
+                    self._start_update, MessageBox, msg, MessageBox.TYPE_YESNO
+                )
+            else:
+                # Nema update-a
+                pass
+        except Exception as e:
+            print(f"[CiefpEPGinfo] Update check error: {e}")
+
+    def _start_update(self, answer):
+        """Pokreni update ako korisnik potvrdi"""
+        if not answer:
+            return
+        try:
+            self["status"].setText("Updating... please wait")
+            # Pokreni installer.sh
+            os.system(UPDATE_COMMAND)
+        except Exception as e:
+            print(f"[CiefpEPGinfo] Update error: {e}")
+            self["status"].setText("Update failed")
+
 
     # ---------- SERVICE INFO ----------
     def _get_service_name(self):
@@ -2349,7 +2396,9 @@ class SettingsScreen(Screen):
         elif idx == 17:
             self.clear_cache_dialog()
         # idx 18 = separator
-        # idx 19 = Manual update
+        # idx 19 = Manual Update
+        elif idx == 19:
+            self.manual_update_dialog()
 
     def _cycle_language(self):
         """Ciklus kroz listu jezika"""
@@ -2510,6 +2559,21 @@ class SettingsScreen(Screen):
                 self.build_menu()  # osveži prikaz
             else:
                 self["status"].setText("Cancelled")
+
+        self.session.openWithCallback(
+            confirm, MessageBox, msg, MessageBox.TYPE_YESNO
+        )
+
+    def manual_update_dialog(self):
+        """Ručna provera i instalacija update-a"""
+        msg = (f"Check for updates?\n\n"
+               f"This will download the latest version\n"
+               f"from GitHub and restart Enigma2.")
+
+        def confirm(result):
+            if result:
+                self["status"].setText("Updating... please wait")
+                os.system(UPDATE_COMMAND)
 
         self.session.openWithCallback(
             confirm, MessageBox, msg, MessageBox.TYPE_YESNO
