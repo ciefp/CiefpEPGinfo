@@ -180,6 +180,7 @@ bash
 ├── tmdbapikey.txt
 ├── omdbapikey.txt
 └── groqapikey.txt
+/bash
 
 # 🔄 Update
 The plugin automatically checks for a new version upon opening. If an update is available:
