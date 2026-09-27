@@ -129,7 +129,7 @@ config.plugins.ciefpepginfo.translate_titles = ConfigYesNo(default=False)       
 
 PLUGIN_NAME = "CiefpEPGinfo"
 PLUGIN_DESC = "FHD EPG Info with TMDB/OMDb enrichment"
-PLUGIN_VERSION = "1.1"
+PLUGIN_VERSION = "1.2"
 PLUGIN_DIR = os.path.dirname(__file__) if '__file__' in globals() else \
     "/usr/lib/enigma2/python/Plugins/Extensions/CiefpEPGinfo"
 
@@ -909,10 +909,17 @@ class CiefpEPGinfoMain(Screen):
         self.epg_refresh_timer.callback.append(self.refresh_epg)
         self.epg_refresh_timer.start(60000)  # svakih 60s
 
-        self.onLayoutFinish.append(self._check_for_updates)
         self.onLayoutFinish.append(self.on_start)
         self.onClose.append(self.__onClose)
         self._saved_media_state = None  # Za povratak sa profila osobe
+
+        # Update check
+        self.container = eConsoleAppContainer()
+        self.container.appClosed.append(self.command_finished)
+        self.container.dataAvail.append(self.version_data_avail)
+        self.version_check_in_progress = False
+        self.version_buffer = b''
+        self.onLayoutFinish.append(self.check_for_updates)
 
     def __onClose(self):
         try:
@@ -952,53 +959,62 @@ class CiefpEPGinfoMain(Screen):
         if px and self["poster"].instance:
             self["poster"].instance.setPixmap(px)
     # ---------- Update plugin ------------
-    def _check_for_updates(self):
-        """Provera nove verzije sa GitHub-a"""
-        try:
-            print(f"[CiefpEPGinfo] Checking for updates...")
-
-            # Učitaj version.txt sa GitHub-a
-            ctx = ssl.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
-
-            req = urllib.request.Request(
-                VERSION_URL,
-                headers={"User-Agent": "CiefpEPGinfo/" + PLUGIN_VERSION}
-            )
-            with urllib.request.urlopen(req, context=ctx, timeout=10) as resp:
-                remote_version = resp.read().decode("utf-8", errors="ignore").strip()
-
-            print(f"[CiefpEPGinfo] Local version: {PLUGIN_VERSION}, remote: {remote_version}")
-
-            # Ako je remote verzija različita → ima update
-            if remote_version and remote_version != PLUGIN_VERSION:
-                msg = (f"New version available!\n\n"
-                       f"Local:  v{PLUGIN_VERSION}\n"
-                       f"Remote: v{remote_version}\n\n"
-                       f"Update now?")
-                self.session.openWithCallback(
-                    self._start_update, MessageBox, msg, MessageBox.TYPE_YESNO
-                )
-            else:
-                # Nema update-a
-                pass
-        except Exception as e:
-            print(f"[CiefpEPGinfo] Update check error: {e}")
-
-    def _start_update(self, answer):
-        """Pokreni update ako korisnik potvrdi"""
-        if not answer:
+    def check_for_updates(self):
+        if self.version_check_in_progress:
             return
+        self.version_check_in_progress = True
+        self["status"].setText("Checking for updates...")
         try:
-            self["status"].setText("Updating... please wait")
-            # Pokreni installer.sh
-            os.system(UPDATE_COMMAND)
+            self.container.execute(f"wget -q --timeout=10 -O - {VERSION_URL}")
         except Exception as e:
-            print(f"[CiefpEPGinfo] Update error: {e}")
-            self["status"].setText("Update failed")
+            self.version_check_in_progress = False
+            self["status"].setText("Update check failed.")
+            print("[CiefpEPGinfo] Update error:", e)
 
+    def version_data_avail(self, data):
+        self.version_buffer += data
 
+    def command_finished(self, retval):
+        if self.version_check_in_progress:
+            self.version_check_closed(retval)
+        else:
+            self.update_completed(retval)
+
+    def version_check_closed(self, retval):
+        self.version_check_in_progress = False
+        if retval == 0:
+            try:
+                remote_version = self.version_buffer.decode().strip()
+                self.version_buffer = b''
+                print(f"[CiefpEPGinfo] Local: {PLUGIN_VERSION}, Remote: {remote_version}")
+                if remote_version != PLUGIN_VERSION:
+                    self.session.openWithCallback(
+                        self.start_update,
+                        MessageBox,
+                        f"New version: v{remote_version}\nInstall now?",
+                        MessageBox.TYPE_YESNO
+                    )
+                else:
+                    self["status"].setText("The plugin is up to date.")
+            except Exception as e:
+                self["status"].setText("Version check failed.")
+                print(f"[CiefpEPGinfo] Parse error: {e}")
+        else:
+            self["status"].setText("Update check failed.")
+
+    def start_update(self, answer):
+        if not answer:
+            self["status"].setText("Update cancelled.")
+            return
+        self["status"].setText("Updating...")
+        self.container.execute(UPDATE_COMMAND)
+
+    def update_completed(self, retval):
+        if retval == 0:
+            self["status"].setText("Update OK! Restarting...")
+            self.container.execute("sleep 2 && killall -9 enigma2")
+        else:
+            self["status"].setText("Update failed.")
     # ---------- SERVICE INFO ----------
     def _get_service_name(self):
         try:
