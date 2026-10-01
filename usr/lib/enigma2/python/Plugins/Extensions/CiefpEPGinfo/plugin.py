@@ -129,7 +129,7 @@ config.plugins.ciefpepginfo.translate_titles = ConfigYesNo(default=False)       
 
 PLUGIN_NAME = "CiefpEPGinfo"
 PLUGIN_DESC = "FHD EPG Info with TMDB/OMDb enrichment"
-PLUGIN_VERSION = "1.3"
+PLUGIN_VERSION = "1.4"
 PLUGIN_DIR = os.path.dirname(__file__) if '__file__' in globals() else \
     "/usr/lib/enigma2/python/Plugins/Extensions/CiefpEPGinfo"
 
@@ -328,12 +328,116 @@ def get_epg_event_list(max_items=8):
         print("[CiefpEPGinfo] get_epg_event_list error:", e)
     return out
 
-# ---------- TITLE SIMILARITY ----------
-def _title_similarity(a, b):
-    """Vraća sličnost dva naslova (0.0 - 1.0)"""
-    if not a or not b:
-        return 0.0
-    return SequenceMatcher(None, a.lower().strip(), b.lower().strip()).ratio()
+# ---------- TITLE TRANSLATION CACHE ----------
+_TITLE_TRANSLATION_CACHE = {}
+
+
+def _translate_title_to_english(title):
+    """
+    Prevedi naslov na engleski preko GROQ-a.
+
+    Vraća:
+    - Prevedeni naslov (ako uspe)
+    - Originalni naslov (ako ne uspe ili nema API key)
+    - None (ako je prevod identičan originalu – ne vredi)
+    """
+    if not title:
+        return None
+
+    # Proveri cache
+    cache_key = title.lower().strip()
+    if cache_key in _TITLE_TRANSLATION_CACHE:
+        return _TITLE_TRANSLATION_CACHE[cache_key]
+
+    # Uzmi GROQ API key
+    api_key = config.plugins.ciefpepginfo.groq_api_key.value.strip()
+    if not api_key:
+        print(f"[CiefpEPGinfo] No GROQ key – skipping title translation")
+        return None
+
+    try:
+        import requests
+        if requests is None:
+            return None
+
+        # Detektuj da li je naslov već na engleskom (ASCII provera)
+        ascii_count = sum(1 for c in title if ord(c) < 128)
+        is_ascii = (ascii_count / len(title)) > 0.95
+        has_non_latin = any(ord(c) > 127 for c in title)
+
+        # Ako je čist ASCII i nema dijakritika – verovatno je već engleski
+        if is_ascii and not has_non_latin:
+            print(f"[CiefpEPGinfo] Title looks English, skipping translation: '{title}'")
+            _TITLE_TRANSLATION_CACHE[cache_key] = None
+            return None
+
+        payload = {
+            "model": config.plugins.ciefpepginfo.groq_model.value,
+            "messages": [
+                {"role": "system",
+                 "content": "You are a translator specialized in movie and TV show titles. "
+                            "Translate the following title into English. "
+                            "Return ONLY the English title, nothing else. "
+                            "Do NOT add quotes, explanations, or extra text. "
+                            "If the title is already in English, return it unchanged."},
+                {"role": "user", "content": title}
+            ],
+            "temperature": 0.1,
+            "max_tokens": 8000,
+        }
+
+        headers = {
+            "Authorization": "Bearer " + api_key,
+            "Content-Type": "application/json",
+        }
+
+        r = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers=headers, json=payload, timeout=15
+        )
+
+        if r.status_code == 200:
+            data = r.json()
+            english_title = data["choices"][0]["message"]["content"].strip()
+            # Očisti navodnike i dodatni tekst
+            english_title = english_title.strip('"').strip("'").strip()
+            # Ukloni eventualni prefiks "Title: "
+            if english_title.lower().startswith("title:"):
+                english_title = english_title[6:].strip()
+
+            print(f"[CiefpEPGinfo] Title translated: '{title}' -> '{english_title}'")
+
+            # Ako je prevod identičan originalu – ne vredi
+            if english_title.lower().strip() == title.lower().strip():
+                _TITLE_TRANSLATION_CACHE[cache_key] = None
+                return None
+
+            _TITLE_TRANSLATION_CACHE[cache_key] = english_title
+            return english_title
+        else:
+            print(f"[CiefpEPGinfo] Title translation HTTP {r.status_code}")
+            _TITLE_TRANSLATION_CACHE[cache_key] = None
+            return None
+    except Exception as e:
+        print(f"[CiefpEPGinfo] Title translation error: {e}")
+        _TITLE_TRANSLATION_CACHE[cache_key] = None
+        return None
+
+
+def _tmdb_search_with_translation(title, year, api_key):
+    # 1. Probaj originalni naslov
+    result, media_type = _tmdb_search_multi(title, year, api_key)
+    if result:
+        return result, media_type
+
+    # 2. Probaj sa prevodom
+    english_title = _translate_title_to_english(title)
+    if english_title and english_title.lower() != title.lower():
+        result, media_type = _tmdb_search_multi(english_title, year, api_key)
+        if result:
+            return result, media_type
+
+    return None, None
 # ---------- GENERIC TITLES ----------
 GENERIC_TITLES = {
     # Srpski / Hrvatski / Bosanski
@@ -370,13 +474,6 @@ def is_generic_title(title):
     return False
 # ---------- TMDB ----------
 def _tmdb_search_multi(title, year, api_key):
-    """
-    TMDB pretraga sa PAMETNIJIM odabirom rezultata.
-    Umesto popularity, koristi kombinaciju:
-    - Sličnost naslova (najvažnije)
-    - Godina (ako postoji)
-    - Popularity (manje važno)
-    """
     if not api_key:
         return None, None
     try:
@@ -390,8 +487,6 @@ def _tmdb_search_multi(title, year, api_key):
             params["year"] = year
         url = "https://api.themoviedb.org/3/search/multi?" + urllib.parse.urlencode(params)
 
-        print(f"[CiefpDebug] TMDB URL: {url}")
-
         ctx = ssl.create_default_context()
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
@@ -399,64 +494,19 @@ def _tmdb_search_multi(title, year, api_key):
             data = json.loads(resp.read().decode("utf-8", errors="ignore"))
 
         results = [r for r in data.get("results", []) if r.get("media_type") in ("movie", "tv")]
-
-        print(f"[CiefpDebug] TMDB total: {data.get('total_results', 0)}, movie/tv: {len(results)}")
-
         if not results:
             return None, None
 
-        # === OCENI SVAKI REZULTAT ===
-        scored = []
-        for r in results:
-            r_title = r.get("title") or r.get("name", "")
-            r_year = (r.get("release_date") or r.get("first_air_date") or "")[:4]
-            pop = r.get("popularity", 0)
-            votes = r.get("vote_count", 0)
+        # Ako je year zadat, prioritet match-u
+        if year:
+            for c in results:
+                c_year = (c.get("release_date") or c.get("first_air_date") or "")[:4]
+                if c_year == str(year):
+                    return c, c["media_type"]
 
-            # Sličnost naslova (0.0 - 1.0)
-            sim = _title_similarity(title, r_title)
-
-            # Bonus ako se godina poklapa
-            year_bonus = 0.0
-            if year and r_year == str(year):
-                year_bonus = 0.3
-
-            # Normalizovan popularity (max 0.2)
-            pop_score = min(pop / 50.0, 0.2)
-
-            # Bonus za više glasova (pouzdaniji rezultat)
-            vote_score = min(votes / 500.0, 0.1)
-
-            # UKUPNA OCENA
-            total = sim * 0.7 + year_bonus + pop_score + vote_score
-
-            scored.append({
-                "result": r,
-                "score": total,
-                "sim": sim,
-                "pop": pop,
-                "title": r_title,
-                "year": r_year,
-            })
-
-            print(f"[CiefpDebug]   '{r_title}' ({r_year}) sim={sim:.2f} pop={pop:.1f} -> score={total:.2f}")
-
-        # Sortiraj po UKUPNOJ OCENI
-        scored.sort(key=lambda x: x["score"], reverse=True)
-
-        best = scored[0]
-        best_result = best["result"]
-        best_title = best["title"]
-
-        print(f"[CiefpDebug] TMDB BEST: '{best_title}' (score={best['score']:.2f}, sim={best['sim']:.2f})")
-
-        # === PROVERA POUZDANOSTI ===
-        if best["sim"] < 0.5:
-            print(f"[CiefpDebug] TMDB low similarity ({best['sim']:.2f}) -> rejecting")
-            return None, None
-
-        return best_result, best_result["media_type"]
-
+        # Inače, prvi (najpopularniji)
+        best = results[0]
+        return best, best["media_type"]
     except Exception as e:
         print("[CiefpEPGinfo] multi search error:", e)
         return None, None
@@ -1594,7 +1644,7 @@ class CiefpEPGinfoMain(Screen):
             # ============================================================
             # 1. TMDB pretraga
             # ============================================================
-            result, media_type = _tmdb_search_multi(title, year, api_key)
+            result, media_type = _tmdb_search_with_translation(title, year, api_key)
 
             if not result:
                 # TMDB ne zna film → fallback na detect_non_tmdb
@@ -1783,24 +1833,38 @@ class CiefpEPGinfoMain(Screen):
                 args=(media_id, media_type, api_key),
                 daemon=True
             ).start()
-        # Poster
+        # ============================================================
+        # POSTER – hijerarhija fallback-a
+        # ============================================================
         poster_path = details.get("poster_path")
+        backdrop_path = details.get("backdrop_path")
+        media_id = details.get("id")
+
+        # 1. PRVO: TMDB poster_path (najbolje)
         if poster_path and media_id:
-            # TMDB ima poster – NAJVEĆI PRIORITET
+            print(f"[CiefpEPGinfo] Poster: TMDB poster_path")
             self._download_poster_async(poster_path, media_id, media_type)
+
+        # 2. AKO NEMA POSTER: probaj TMDB backdrop_path (kao poster)
+        elif backdrop_path and media_id:
+            print(f"[CiefpEPGinfo] Poster: TMDB backdrop_path (fallback)")
+            self._download_backdrop_as_poster_async(backdrop_path, media_id, media_type)
+
+        # 3. AKO NEMA NI BACKDROP: probaj žanr (sport, news, music, kids, docu)
         else:
-            # TMDB nema poster – fallback
-            # 1. Probaj žanr (sport, news, music, kids, docu)
+            print(f"[CiefpEPGinfo] Poster: genre placeholder")
             genres_list = [g["name"] for g in details.get("genres", [])]
             placeholder = choose_placeholder(genres_list)
 
-            # 2. Ako žanr nije prepoznat → movie.png ili series.png
+            # 4. AKO ŽANR NIJE PREPOZNAT: movie.png / series.png
             if placeholder == PLACEHOLDER:
+                print(f"[CiefpEPGinfo] Poster: movie/series placeholder")
                 if media_type == "movie":
                     placeholder = PLACEHOLDER_MOVIE if os.path.exists(PLACEHOLDER_MOVIE) else PLACEHOLDER
                 elif media_type == "tv":
                     placeholder = PLACEHOLDER_SERIES if os.path.exists(PLACEHOLDER_SERIES) else PLACEHOLDER
 
+            # 5. AKO NIŠTA NE POSTOJI: placeholder.png
             self._set_poster(placeholder)
 
     def _fetch_imdb_async(self, details, media_type):
@@ -1870,6 +1934,42 @@ class CiefpEPGinfoMain(Screen):
                 self["poster"].show()
             except Exception:
                 pass
+
+    def _download_backdrop_as_poster_async(self, backdrop_path, media_id, media_type):
+        """
+        Download backdrop slike i koristi je kao poster.
+        Backdrop je širi (16:9), ali se može skalirati u poster widget.
+        """
+        if not backdrop_path or not media_id:
+            self._set_poster(PLACEHOLDER)
+            return
+        if not config.plugins.ciefpepginfo.cache_enabled.value:
+            self._set_poster(PLACEHOLDER)
+            return
+
+        def worker():
+            try:
+                folder = ensure_cache_folder()
+                fname = os.path.join(
+                    folder,
+                    f"backdrop_{media_type}_{media_id}_{os.path.basename(backdrop_path)}"
+                )
+                if not os.path.exists(fname):
+                    # Backdrop je obično w780 ili w1280
+                    # Koristimo w780 da bude približno veličini postera
+                    url = "https://image.tmdb.org/t/p/w780" + backdrop_path
+                    ctx = ssl.create_default_context()
+                    ctx.check_hostname = False
+                    ctx.verify_mode = ssl.CERT_NONE
+                    data = urllib.request.urlopen(url, context=ctx, timeout=15).read()
+                    with open(fname, "wb") as f:
+                        f.write(data)
+                self._set_poster(fname)
+            except Exception as e:
+                print("[CiefpEPGinfo] backdrop download error:", e)
+                self._set_poster(PLACEHOLDER)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     # ---------- ACTIONS ----------
     def on_ok(self):
