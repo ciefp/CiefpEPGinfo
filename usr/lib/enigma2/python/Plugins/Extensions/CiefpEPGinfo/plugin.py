@@ -119,17 +119,16 @@ config.plugins.ciefpepginfo.translate_to = ConfigSelection(default="sr", choices
     ("pl", "Polski"), ("cs", "Čeština"), ("hu", "Magyar"),
     ("ro", "Română"), ("bg", "Български"), ("el", "Ελληνικά"),
     ("tr", "Türkçe"), ("nl", "Nederlands"), ("sv", "Svenska"),
-    ("ar", "العربية"),   # ← DODATO
+    ("ar", "العربية"),
 ])
-# NOVO – šta prevoditi
-config.plugins.ciefpepginfo.translate_epg_description = ConfigYesNo(default=True)   # EPG opis
-config.plugins.ciefpepginfo.translate_tmdb_overview = ConfigYesNo(default=False)    # TMDB Plot
-config.plugins.ciefpepginfo.translate_biography = ConfigYesNo(default=False)        # Biography glumca
-config.plugins.ciefpepginfo.translate_titles = ConfigYesNo(default=False)           # Naslovi (sporije)
+config.plugins.ciefpepginfo.translate_epg_description = ConfigYesNo(default=True)
+config.plugins.ciefpepginfo.translate_tmdb_overview = ConfigYesNo(default=False)
+config.plugins.ciefpepginfo.translate_biography = ConfigYesNo(default=False)
+config.plugins.ciefpepginfo.translate_titles = ConfigYesNo(default=False)
 
 PLUGIN_NAME = "CiefpEPGinfo"
 PLUGIN_DESC = "FHD EPG Info with TMDB/OMDb enrichment"
-PLUGIN_VERSION = "1.4"
+PLUGIN_VERSION = "1.5"
 PLUGIN_DIR = os.path.dirname(__file__) if '__file__' in globals() else \
     "/usr/lib/enigma2/python/Plugins/Extensions/CiefpEPGinfo"
 
@@ -150,6 +149,10 @@ BACKGROUND_SETTINGS = os.path.join(PLUGIN_DIR, "settings.png")
 
 VERSION_URL = "https://raw.githubusercontent.com/ciefp/CiefpEPGinfo/main/version.txt"
 UPDATE_COMMAND = "wget -q --no-check-certificate https://raw.githubusercontent.com/ciefp/CiefpEPGinfo/main/installer.sh -O - | /bin/sh"
+
+# ← NOVO: putanje do bouquet fajlova
+USERBOUQUET_DIR = "/etc/enigma2"
+LAMEDB_DIR = "/etc/enigma2"
 
 
 # ---------- API KEY LOAD/SAVE ----------
@@ -296,8 +299,10 @@ def _epg_event_to_dict(event):
         return None
 
 
-def get_epg_event_list(max_items=8):
-    service = get_current_service()
+def get_epg_event_list(max_items=8, service=None):
+    # ← IZMENA: sada prima i service (za bouquet mod), ako nije zadat koristi trenutni
+    if service is None:
+        service = get_current_service()
     if not service:
         return []
     epg = eEPGCache.getInstance()
@@ -335,42 +340,27 @@ _TITLE_TRANSLATION_CACHE = {}
 def _translate_title_to_english(title):
     """
     Prevedi naslov na engleski preko GROQ-a.
-
-    Vraća:
-    - Prevedeni naslov (ako uspe)
-    - Originalni naslov (ako ne uspe ili nema API key)
-    - None (ako je prevod identičan originalu – ne vredi)
     """
     if not title:
         return None
-
-    # Proveri cache
     cache_key = title.lower().strip()
     if cache_key in _TITLE_TRANSLATION_CACHE:
         return _TITLE_TRANSLATION_CACHE[cache_key]
-
-    # Uzmi GROQ API key
     api_key = config.plugins.ciefpepginfo.groq_api_key.value.strip()
     if not api_key:
         print(f"[CiefpEPGinfo] No GROQ key – skipping title translation")
         return None
-
     try:
         import requests
         if requests is None:
             return None
-
-        # Detektuj da li je naslov već na engleskom (ASCII provera)
         ascii_count = sum(1 for c in title if ord(c) < 128)
         is_ascii = (ascii_count / len(title)) > 0.95
         has_non_latin = any(ord(c) > 127 for c in title)
-
-        # Ako je čist ASCII i nema dijakritika – verovatno je već engleski
         if is_ascii and not has_non_latin:
             print(f"[CiefpEPGinfo] Title looks English, skipping translation: '{title}'")
             _TITLE_TRANSLATION_CACHE[cache_key] = None
             return None
-
         payload = {
             "model": config.plugins.ciefpepginfo.groq_model.value,
             "messages": [
@@ -385,33 +375,24 @@ def _translate_title_to_english(title):
             "temperature": 0.1,
             "max_tokens": 8000,
         }
-
         headers = {
             "Authorization": "Bearer " + api_key,
             "Content-Type": "application/json",
         }
-
         r = requests.post(
             "https://api.groq.com/openai/v1/chat/completions",
             headers=headers, json=payload, timeout=15
         )
-
         if r.status_code == 200:
             data = r.json()
             english_title = data["choices"][0]["message"]["content"].strip()
-            # Očisti navodnike i dodatni tekst
             english_title = english_title.strip('"').strip("'").strip()
-            # Ukloni eventualni prefiks "Title: "
             if english_title.lower().startswith("title:"):
                 english_title = english_title[6:].strip()
-
             print(f"[CiefpEPGinfo] Title translated: '{title}' -> '{english_title}'")
-
-            # Ako je prevod identičan originalu – ne vredi
             if english_title.lower().strip() == title.lower().strip():
                 _TITLE_TRANSLATION_CACHE[cache_key] = None
                 return None
-
             _TITLE_TRANSLATION_CACHE[cache_key] = english_title
             return english_title
         else:
@@ -425,45 +406,34 @@ def _translate_title_to_english(title):
 
 
 def _tmdb_search_with_translation(title, year, api_key):
-    # 1. Probaj originalni naslov
     result, media_type = _tmdb_search_multi(title, year, api_key)
     if result:
         return result, media_type
-
-    # 2. Probaj sa prevodom
     english_title = _translate_title_to_english(title)
     if english_title and english_title.lower() != title.lower():
         result, media_type = _tmdb_search_multi(english_title, year, api_key)
         if result:
             return result, media_type
-
     return None, None
+
 # ---------- GENERIC TITLES ----------
 GENERIC_TITLES = {
-    # Srpski / Hrvatski / Bosanski
     "vesti", "vijesti", "dnevnik", "program", "info",
     "informativni program", "jutarnji program", "večernji program",
     "dnevnik 1", "dnevnik 2", "sat", "vreme", "prognoza",
     "report", "reports", "sport", "emisija",
     "razgovor", "intervju", "talk show",
-    # Engleski
     "news", "weather", "sports", "info", "program",
     "morning show", "evening news", "breaking news",
-    # Nemački
     "nachrichten", "wetter", "programm",
-    # Francuski
     "actualités", "météo", "journal",
-    # Italijanski
     "notizie", "meteo", "telegiornale",
-    # Španski
     "noticias", "tiempo", "informativos",
-    # Češki / Slovački
     "zprávy", "počasí", "správy", "počasie",
 }
 
 
 def is_generic_title(title):
-    """Proveri da li je naslov generičan (ne vredi ići na TMDB)"""
     if not title:
         return True
     t = title.lower().strip()
@@ -472,6 +442,7 @@ def is_generic_title(title):
     if len(t) < 4:
         return True
     return False
+
 # ---------- TMDB ----------
 def _tmdb_search_multi(title, year, api_key):
     if not api_key:
@@ -486,25 +457,19 @@ def _tmdb_search_multi(title, year, api_key):
         if year:
             params["year"] = year
         url = "https://api.themoviedb.org/3/search/multi?" + urllib.parse.urlencode(params)
-
         ctx = ssl.create_default_context()
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
         with urllib.request.urlopen(url, context=ctx, timeout=12) as resp:
             data = json.loads(resp.read().decode("utf-8", errors="ignore"))
-
         results = [r for r in data.get("results", []) if r.get("media_type") in ("movie", "tv")]
         if not results:
             return None, None
-
-        # Ako je year zadat, prioritet match-u
         if year:
             for c in results:
                 c_year = (c.get("release_date") or c.get("first_air_date") or "")[:4]
                 if c_year == str(year):
                     return c, c["media_type"]
-
-        # Inače, prvi (najpopularniji)
         best = results[0]
         return best, best["media_type"]
     except Exception as e:
@@ -526,24 +491,10 @@ def _tmdb_details(media_id, media_type, api_key):
         return None
 
 
-def _tmdb_trailer(media_id, media_type, api_key):
-    try:
-        url = f"https://api.themoviedb.org/3/{media_type}/{media_id}/videos?api_key={api_key}"
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        with urllib.request.urlopen(url, context=ctx, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8", errors="ignore"))
-        for v in data.get("results", []):
-            if v.get("site") == "YouTube" and v.get("type") in ("Trailer", "Teaser"):
-                return v.get("key")
-    except Exception as e:
-        print("[CiefpEPGinfo] trailer error:", e)
-    return None
-    
+# ← IZMENA: _tmdb_trailer je UKLONJEN (trajleri se brišu)
+
 # ---------- TMDB PERSON ----------
 def _tmdb_search_person(name, api_key):
-    """Pretraga osobe po imenu"""
     if not api_key:
         return None
     try:
@@ -566,7 +517,6 @@ def _tmdb_search_person(name, api_key):
 
 
 def _tmdb_person_details(person_id, api_key):
-    """Detalji osobe + movie_credits + tv_credits"""
     try:
         url = (f"https://api.themoviedb.org/3/person/{person_id}"
                f"?api_key={api_key}"
@@ -583,17 +533,11 @@ def _tmdb_person_details(person_id, api_key):
 
 
 def _tmdb_person_imdb_rating(person_details, omdb_key):
-    """
-    Pokušava dobiti IMDB rating za osobu preko njenog poznatog filma.
-    OMDb ne podržava direktno pretragu osoba, pa koristimo poznati film.
-    """
     if not omdb_key:
         return None
-    # Uzmi najpoznatiji film osobe
     movie_credits = person_details.get("movie_credits", {}).get("cast", [])
     if not movie_credits:
         return None
-    # Sortiraj po popularnosti
     movie_credits.sort(key=lambda x: x.get("popularity", 0), reverse=True)
     top = movie_credits[0]
     title = top.get("title")
@@ -651,28 +595,21 @@ def _translation_cache_key(text, target_lang):
 
 
 def _translate_cached(text, target_lang):
-    """
-    Prevod sa cache-om – koristi Translator iz components/translator.py.
-    Više ne prima api_key (Translator sam čita iz config-a).
-    """
     if not text:
         return text
     key = _translation_cache_key(text, target_lang)
     if key in _TRANSLATION_CACHE:
         return _TRANSLATION_CACHE[key]
-
-    # Napravi Translator (sam uzima key + model iz config-a)
     tr = Translator()
     if not tr.is_available():
         print("[CiefpEPGinfo] Translator not available (key or requests missing)")
         return text
-
     translated = tr.translate(text, target_language=target_lang)
     _TRANSLATION_CACHE[key] = translated
     return translated
+
 # ---------- PLACEHOLDER odabir po žanru ----------
 def choose_placeholder(genres):
-    """Vraća odgovarajući placeholder po žanru"""
     if not genres:
         return PLACEHOLDER
     g = " ".join(genres).lower()
@@ -687,159 +624,370 @@ def choose_placeholder(genres):
     if any(k in g for k in ("documentary", "Documentaries")):
         return PLACEHOLDER_DOCU if os.path.exists(PLACEHOLDER_DOCU) else PLACEHOLDER
     return PLACEHOLDER
+
 def _kw_match(combo, keywords):
-    """
-    Proverava da li neka reč iz liste postoji kao CELA REČ u combo.
-    Ne pogađa podstringove (npr. "ski" neće pogoditi "televizijskih").
-    """
     for kw in keywords:
-        # Word boundary + escape za specijalne znakove
         if re.search(r'\b' + re.escape(kw) + r'\b', combo):
             return kw
     return None
 
 
 def detect_non_tmdb(title, description):
-    """
-    Detektuje da li je sadržaj van TMDB (sport, muzika, vesti...).
-    Vraća (True, placeholder) ako NE treba TMDB.
-    """
     t = (title or "").lower()
     d = (description or "").lower()
     combo = t + " " + d
-
     print(f"[CiefpDebug] detect_non_tmdb: title='{title}'")
     print(f"[CiefpDebug] combo[:200]='{combo[:200]}'")
-    # SPORT
     sport_kw = (
-        "sport", "sports",
-        "football", "fudbal", "soccer", "nogomet",
-        "tennis", "tenis",
-        "basket", "basketball", "košarka", "kosarka",
-        "nba", "nfl",
-        "formula 1", "f1", "formula", "formule",
-        "moto gp", "motogp", "moto2", "moto3",
-        "olympic", "olimpijada", "olympiáda",
-        "atletika",
-        "utakmica", "utakmice", "match",
-        "liga", "extraliga", "kup", "cup",
-        "champions league", "premier league",
-        "bundesliga", "serie a", "la liga",
-        "weltmeisterschaft",
-        "góly - body - sekundy",
-        "hádzaná", "hadzana", "handball", "rukomet",
-        "hokej", "hockey", "lední hokej", "ledni hokej",
-        "volejbal", "volleyball", "odbojka",
-        "plavání", "plavani", "swimming", "plivanje",
-        "lyžování", "lyzovani",
-        "ski", "skijanje",              # ← ski ostaje, ali sada sa word boundary
-        "cyklistika", "cycling", "biciklizam",
-        "závod", "zavod", "race", "utrka",
-        "turnaj", "tournament", "turnir",
+        "sport", "sports", "football", "fudbal", "soccer", "nogomet",
+        "tennis", "tenis", "basket", "basketball", "košarka", "kosarka",
+        "nba", "nfl", "formula 1", "f1", "formula", "formule",
+        "moto gp", "motogp", "moto2", "moto3", "olympic", "olimpijada", "olympiáda",
+        "atletika", "utakmica", "utakmice", "match", "liga", "extraliga", "kup", "cup",
+        "champions league", "premier league", "bundesliga", "serie a", "la liga",
+        "weltmeisterschaft", "góly - body - sekundy", "hádzaná", "hadzana", "handball", "rukomet",
+        "hokej", "hockey", "lední hokej", "ledni hokej", "volejbal", "volleyball", "odbojka",
+        "plavání", "plavani", "swimming", "plivanje", "lyžování", "lyzovani",
+        "ski", "skijanje", "cyklistika", "cycling", "biciklizam",
+        "závod", "zavod", "race", "utrka", "turnaj", "tournament", "turnir",
     )
-
-    # MUZIKA
     music_kw = (
-        "music", "musical", "muzika", "glazba", "hudba",
-        "concert", "koncert", "live concert",
-        "festival", "mtv", "vh1", "muzike",
-        "opera", "opereta",
+        "music", "musical", "muzika", "glazba", "hudba", "concert", "koncert", "live concert",
+        "festival", "mtv", "vh1", "muzike", "opera", "opereta",
     )
-
-    # VESTI
     news_kw = (
-        "news", "vesti", "novosti", "nachrichten",
-        "actualités", "actualites", "noticias",
-        "telegiornale", "dnevnik", "tagesschau",
-        "správy", "spravy", "zprávy", "zpravy",
-        "reportáž", "reportaz", "newstime",
-        "jutarnji program", "informativni", "program",             # ← lowercase!
+        "news", "vesti", "novosti", "nachrichten", "actualités", "actualites", "noticias",
+        "telegiornale", "dnevnik", "tagesschau", "správy", "spravy", "zprávy", "zpravy",
+        "reportáž", "reportaz", "newstime", "jutarnji program", "informativni", "program",
     )
-
-    # KIDS
     kids_kw = (
-        "kids", "dečiji", "za decu", "for kids",
-        "children's", "child's", "kinder",
-        "infantile", "pour enfants", "per bambini",
-        "para niños", "детский", "çocuk", "παιδικός",
+        "kids", "dečiji", "za decu", "for kids", "children's", "child's", "kinder",
+        "infantile", "pour enfants", "per bambini", "para niños", "детский", "çocuk", "παιδικός",
     )
-
-    # DOKUMENTARCI
     documentary_kw = (
         "documentary", "dokument", "dokumentarni", "dokumentárního",
         "dokumentární", "dokumentarni", "dokumentarna",
     )
-
-    # === PROVERA SA WORD BOUNDARY ===
     hit = _kw_match(combo, sport_kw)
     if hit:
         print(f"[CiefpDebug] SPORT hit: '{hit}'")
         return True, PLACEHOLDER_SPORT if os.path.exists(PLACEHOLDER_SPORT) else PLACEHOLDER
-
     hit = _kw_match(combo, music_kw)
     if hit:
         print(f"[CiefpDebug] MUSIC hit: '{hit}'")
         return True, PLACEHOLDER_MUSIC if os.path.exists(PLACEHOLDER_MUSIC) else PLACEHOLDER
-
     hit = _kw_match(combo, news_kw)
     if hit:
         print(f"[CiefpDebug] NEWS hit: '{hit}'")
         return True, PLACEHOLDER_NEWS if os.path.exists(PLACEHOLDER_NEWS) else PLACEHOLDER
-
     hit = _kw_match(combo, kids_kw)
     if hit:
         print(f"[CiefpDebug] KIDS hit: '{hit}'")
         return True, PLACEHOLDER_KIDS if os.path.exists(PLACEHOLDER_KIDS) else PLACEHOLDER
-
     hit = _kw_match(combo, documentary_kw)
     if hit:
         print(f"[CiefpDebug] DOCU hit: '{hit}'")
         return True, PLACEHOLDER_DOCU if os.path.exists(PLACEHOLDER_DOCU) else PLACEHOLDER
-
     return False, None
+# ---------- ← NOVO: USER BOUQUETS (prekopirano iz CiefpE2editor) ----------
+ENIGMA2_DIR = "/etc/enigma2"
+BOUQUETS_TV_FILE = "/etc/enigma2/bouquets.tv"
+
+
+def load_all_bouquets_data():
+    """
+    Prekopirano iz CiefpE2editor.load_all_bouquets().
+    Vraća:
+      bouquet_names: dict {display_name: bouquet_file}
+      bouquet_order: list[display_name]  (redosled kao u Enigma2)
+    """
+    bouquet_names = {}
+    bouquet_files = {}
+    bouquet_order_list = []
+
+    if not os.path.exists(BOUQUETS_TV_FILE):
+        print(f"[CiefpEPGinfo] bouquets.tv not found: {BOUQUETS_TV_FILE}")
+        return bouquet_names, bouquet_order_list
+
+    # 1) Pročitaj redosled fajlova iz bouquets.tv
+    bouquet_order = []
+    try:
+        with open(BOUQUETS_TV_FILE, 'r', encoding='utf-8', errors='ignore') as f:
+            for line in f:
+                if "FROM BOUQUET" in line:
+                    start = line.find('"') + 1
+                    end = line.find('"', start)
+                    if start != -1 and end != -1:
+                        bouquet_order.append(line[start:end])
+    except Exception as e:
+        print(f"[CiefpEPGinfo] Error reading bouquets.tv: {e}")
+        return bouquet_names, bouquet_order_list
+
+    print(f"[CiefpEPGinfo] Found {len(bouquet_order)} entries in bouquets.tv")
+
+    # 2) Za svaki fajl pročitaj #NAME
+    for bouquet_file in bouquet_order:
+        file_path = os.path.join(ENIGMA2_DIR, bouquet_file)
+        if not os.path.exists(file_path):
+            print(f"[CiefpEPGinfo] Bouquet file missing: {file_path}")
+            continue
+        try:
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                first_line = f.readline().strip()
+                if first_line.startswith("#NAME"):
+                    display_name = first_line.replace("#NAME", "", 1).strip()
+                    bouquet_names[display_name] = bouquet_file
+                    bouquet_files[bouquet_file] = display_name
+                    bouquet_order_list.append(display_name)
+        except Exception as e:
+            print(f"[CiefpEPGinfo] Error reading bouquet {bouquet_file}: {e}")
+
+    print(f"[CiefpEPGinfo] Loaded {len(bouquet_names)} bouquets")
+    return bouquet_names, bouquet_order_list
+
+
+def load_bouquet_channels_data(bouquet_file, lamedb_services):
+    """
+    Prekopirano iz CiefpE2editor.load_bouquet_channels().
+    Vraća:
+      channel_list: list[display_name]   (ono što ide u MenuList)
+      channel_refs: dict {display_name: raw_ref_string}
+                    gde je raw_ref_string cela '#SERVICE ...' linija
+                    (isto kao u CiefpE2editor — string, ne eServiceReference)
+    """
+    channel_refs = {}
+    channel_list = []
+    bouquet_path = os.path.join(ENIGMA2_DIR, bouquet_file)
+    if not os.path.exists(bouquet_path):
+        print(f"[CiefpEPGinfo] Bouquet file not found: {bouquet_path}")
+        return channel_list, channel_refs
+
+    try:
+        with open(bouquet_path, 'r', encoding='utf-8', errors='ignore') as f:
+            lines = f.readlines()
+
+        i = 0
+        while i < len(lines):
+            line = lines[i].strip()
+            if not line:
+                i += 1
+                continue
+
+            if line.startswith("#NAME"):
+                i += 1
+                continue
+
+            elif line.startswith("#SERVICE"):
+                # StreamRelay
+                if "http%3a//0.0.0.0%3a9999/" in line or "%3a9999" in line:
+                    channel_name = "Unknown StreamRelay"
+                    url_parts = line.split(":")
+                    if len(url_parts) >= 11 and url_parts[10] and not url_parts[10].startswith("http"):
+                        channel_name = url_parts[10]
+                    if i + 1 < len(lines) and lines[i + 1].strip().startswith("#DESCRIPTION"):
+                        desc_line = lines[i + 1].strip()
+                        channel_name = desc_line.replace("#DESCRIPTION", "").strip()
+                        i += 1
+                    display_name = f"{channel_name} (StreamRelay)"
+                    channel_list.append(display_name)
+                    channel_refs[display_name] = line
+                    i += 1
+                    continue
+
+                # IPTV
+                elif (line.startswith("#SERVICE 4097:")
+                      or line.startswith("#SERVICE 5001:")
+                      or line.startswith("#SERVICE 5002:")
+                      or "http" in line.lower()):
+                    channel_name = "Unknown IPTV"
+                    url_parts = line.split(":")
+                    if len(url_parts) >= 11 and url_parts[10]:
+                        channel_name = url_parts[10]
+                    if i + 1 < len(lines) and lines[i + 1].strip().startswith("#DESCRIPTION"):
+                        desc_line = lines[i + 1].strip()
+                        channel_name = desc_line.replace("#DESCRIPTION", "").strip()
+                        i += 1
+                    display_name = f"{channel_name} (IPTV)"
+                    channel_list.append(display_name)
+                    channel_refs[display_name] = line
+                    i += 1
+                    continue
+
+                else:
+                    parts = line.split(":")
+                    if len(parts) >= 10:
+                        # Marker (1:64:)
+                        if parts[1] == "64":
+                            if i + 1 < len(lines) and lines[i + 1].strip().startswith("#DESCRIPTION"):
+                                marker_name = lines[i + 1].strip().replace("#DESCRIPTION", "").strip()
+                                display_marker = f"[{marker_name}]"
+                                channel_list.append(display_marker)
+                                channel_refs[display_marker] = line
+                                i += 2
+                                continue
+                            i += 1
+                            continue
+
+                        # Običan DVB servis
+                        sid = parts[3]
+                        tsid = parts[4]
+                        onid = parts[5]
+                        satfreq = parts[6].lower()
+                        satfreq = f"00{satfreq}" if len(satfreq) == 6 else satfreq.zfill(8)
+
+                        search_keys = [
+                            f"{int(sid, 16):04x}:{satfreq}:{int(tsid, 16):04x}:{int(onid, 16):04x}",
+                            f"{sid.lower()}:{satfreq}:{tsid.lower()}:{onid.lower()}",
+                        ]
+                        channel_name = None
+                        for search_key in search_keys:
+                            channel_name = lamedb_services.get(search_key)
+                            if channel_name:
+                                break
+                        if not channel_name:
+                            channel_name = f"Unknown ({search_keys[0]})"
+
+                        channel_list.append(channel_name)
+                        channel_refs[channel_name] = line
+                    i += 1
+
+            elif line.startswith("#DESCRIPTION"):
+                marker_name = line.replace("#DESCRIPTION", "").strip()
+                display_marker = f"[{marker_name}]"
+                if display_marker not in channel_list:
+                    channel_list.append(display_marker)
+                    channel_refs[display_marker] = "#SERVICE 1:64:0:0:0:0:0:0:0:0:"
+                i += 1
+            else:
+                i += 1
+
+    except Exception as e:
+        print(f"[CiefpEPGinfo] Error loading bouquet channels: {e}")
+
+    return channel_list, channel_refs
+
+
+def parse_lamedb_simple():
+    """
+    Pojednostavljena verzija parse_lamedb iz CiefpE2editor.
+    Vraća dict {key: name} za DVB servise – potrebno za load_bouquet_channels_data.
+    """
+    lamedb_path = "/etc/enigma2/lamedb"
+    services = {}
+    if not os.path.exists(lamedb_path):
+        return services
+    try:
+        with open(lamedb_path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+        start_idx = content.find("\nservices\n")
+        end_idx = content.find("\nend\n", start_idx)
+        if start_idx == -1 or end_idx == -1:
+            return services
+        services_block = content[start_idx + 10:end_idx]
+        lines = services_block.splitlines()
+        i = 0
+        while i < len(lines):
+            line = lines[i].strip()
+            if not line:
+                i += 1
+                continue
+            if ":" in line and not line.startswith("p:") and not line.startswith("c:"):
+                parts = line.split(":")
+                if len(parts) >= 5:
+                    sid = parts[0]
+                    satfreq = parts[1].lower()
+                    tsid = parts[2]
+                    onid = parts[3]
+                    key1 = f"{sid}:{satfreq}:{tsid}:{onid}"
+                    key2 = f"{sid.lstrip('0') or '0'}:{satfreq}:{tsid.lstrip('0') or '0'}:{onid.lstrip('0') or '0'}"
+                    name = ""
+                    if i + 1 < len(lines):
+                        name = lines[i + 1].strip()
+                    if name and not name.startswith("p:") and not name.startswith("c:"):
+                        services[key1] = name
+                        services[key2] = name
+                    i += 2
+                    continue
+            i += 1
+    except Exception as e:
+        print(f"[CiefpEPGinfo] parse_lamedb_simple error: {e}")
+    return services
+
+
+def raw_ref_to_eServiceReference(raw_line):
+    """
+    Pretvara '#SERVICE 1:0:19:...' string u eServiceReference.
+    Vraća None ako ne uspe (npr. IPTV URL stream).
+    """
+    if not raw_line:
+        return None
+    ref_str = raw_line.strip()
+    if ref_str.startswith("#SERVICE"):
+        ref_str = ref_str[9:].strip()
+    if not ref_str:
+        return None
+    # IPTV / StreamRelay – ne mogu preko eServiceReference
+    if (ref_str.startswith("4097:")
+            or ref_str.startswith("5001:")
+            or ref_str.startswith("5002:")
+            or "http" in ref_str.lower()):
+        return None
+    try:
+        ref = eServiceReference(ref_str)
+        if ref.valid():
+            return ref
+    except Exception as e:
+        print(f"[CiefpEPGinfo] raw_ref_to_eServiceReference error: {e}")
+    return None
+
+
+def get_service_name_from_ref(ref):
+    """Vraća ime kanala iz eServiceReference"""
+    try:
+        service = eServiceCenter.getInstance().info(ref)
+        if service:
+            name = service.getName(ref)
+            if name:
+                return name
+    except Exception:
+        pass
+    try:
+        name = ref.getName()
+        if name:
+            return name
+    except Exception:
+        pass
+    return "Unknown"
+
+
 # ---------- MAIN SCREEN ----------
 class CiefpEPGinfoMain(Screen):
-    """
-    Glavni ekran FHD (1920x1080).
-    Levo 1/3: EPG lista (picon, sat/datum, lista emisija)
-    Desno 2/3: detalji + poster
-    """
     skin = """
         <screen name="CiefpEPGinfoMain" position="0,0" size="1920,1080"
                 backgroundColor="#011a2e">
 
-            <!-- ================= LEVA STRANA (1/3) ================= -->
-            <!-- Picon kanala -->
             <widget name="picon" position="40,40" size="220,140" alphatest="blend" zPosition="2"/>
 
-            <!-- Dan i datum -->
             <widget name="day" position="500,40" size="200,40" font="Regular;30"
                     foregroundColor="#00BFFF" backgroundColor="#011a2e" transparent="1" halign="left"/>
             <widget name="date" position="500,100" size="200,40" font="Regular;30"
                     foregroundColor="#00BFFF" backgroundColor="#011a2e" transparent="1" halign="left"/>
 
-            <!-- Sat veliki -->
             <widget name="clock" position="290,40" size="200,100" font="Regular;80"
                     foregroundColor="#FFFFFF" backgroundColor="#011a2e" transparent="1" halign="left"/>
 
-            <!-- Naziv kanala -->
             <widget name="service_name" position="40,200" size="600,50" font="Regular;36"
                     foregroundColor="#FFFFFF" backgroundColor="#011a2e" transparent="1"/>
 
-            <!-- EPG lista (glavni widget levo) -->
             <widget name="epg_list" position="30,260" size="610,720"
                     scrollbarMode="showOnDemand" itemHeight="40" font="Regular;26" backgroundColor="#011a2e"/>
 
-            <!-- ================= DESNA STRANA (2/3) ================= -->
-            <!-- Naziv programa -->
             <widget name="title" position="680,40" size="900,50" font="Regular;38"
                     foregroundColor="#FFFFFF" backgroundColor="#011a2e" transparent="1"/>
 
-            <!-- EPG Title (originalni naziv iz EPG) -->
             <widget name="epg_title" position="680,95" size="900,35" font="Regular;24"
                     foregroundColor="#A0A0A0" backgroundColor="#011a2e" transparent="1"/>
 
-            <!-- Trajanje / TMDB / IMDB -->
             <widget name="duration" position="680,140" size="300,35" font="Regular;26"
                     foregroundColor="#D3D3D3" backgroundColor="#011a2e" transparent="1"/>
             <widget name="rating" position="680,180" size="300,35" font="Regular;26"
@@ -847,39 +995,29 @@ class CiefpEPGinfoMain(Screen):
             <widget name="imdb_rating" position="680,220" size="300,35" font="Regular;26"
                     foregroundColor="#F5C518" backgroundColor="#011a2e" transparent="1"/>
 
-            <!-- Žanr -->
             <widget name="genres" position="680,260" size="600,35" font="Regular;26"
                     foregroundColor="#f702db" backgroundColor="#011a2e" transparent="1"/>
 
-            <!-- Režiser -->
             <widget name="director" position="680,300" size="900,35" font="Regular;26"
                     foregroundColor="#f79102" backgroundColor="#011a2e" transparent="1"/>
 
-            <!-- Opis -->
             <widget name="plot" position="680,340" size="600,576" font="Regular;24"
                     foregroundColor="#FFFFFF" backgroundColor="#011a2e" transparent="1" valign="top"/>
 
-            <!-- ===== CAST 2x5 ===== -->
-            <!-- Naslov Cast sekcije -->
             <widget name="cast_header" position="680,800" size="300,30" font="Regular;24"
                     foregroundColor="#00FFFF" backgroundColor="#011a2e" transparent="1"/>
 
-            <!-- Prvi red: 5 glumaca (680 do 1200) -->
             <widget name="cast_col1" position="680,850" size="510,280" font="Regular;20"
                     foregroundColor="#00FFFF" backgroundColor="#011a2e" transparent="1" valign="top"/>
 
-            <!-- Drugi red: 5 glumaca (1200 do 1580) -->
             <widget name="cast_col2" position="1200,850" size="510,280" font="Regular;20"
                     foregroundColor="#00FFFF" backgroundColor="#011a2e" transparent="1" valign="top"/>
 
-            <!-- Poster -->
             <widget name="poster" position="1300,40" size="500,750" alphatest="blend" zPosition="2"/>
 
-            <!-- Status -->
             <widget name="status" position="1280,1010" size="820,40" font="Regular;22"
                     foregroundColor="#00FF00" backgroundColor="#011a2e" transparent="1" halign="left"/>
 
-            <!-- Dugmad -->
             <ePixmap pixmap="buttons/red.png" position="0,1010" size="35,35" alphatest="blend"/>
             <eLabel text="Exit" position="50,1010" size="180,40" font="Regular;26"
                     foregroundColor="white" backgroundColor="#800000" halign="center" valign="center"/>
@@ -890,10 +1028,10 @@ class CiefpEPGinfoMain(Screen):
             <eLabel text="Cast explore" position="530,1010" size="220,40" font="Regular;26"
                     foregroundColor="white" backgroundColor="#808000" halign="center" valign="center"/>
             <ePixmap pixmap="buttons/blue.png" position="760,1010" size="35,35" alphatest="blend"/>
-            <eLabel text="Settings" position="810,1010" size="180,40" font="Regular;26"
+            <eLabel text="Bouquets" position="810,1010" size="180,40" font="Regular;26"
                     foregroundColor="white" backgroundColor="#000080" halign="center" valign="center"/>
             <ePixmap pixmap="buttons/red.png" position="1000,1010" size="35,35" alphatest="blend"/>
-            <eLabel text="Info:Trailers" position="1050,1010" size="220,40" font="Regular;26"
+            <eLabel text="Info:Settings" position="1050,1010" size="220,40" font="Regular;26"
                     foregroundColor="white" backgroundColor="#960396" halign="center" valign="center"/>
         </screen>
     """.format(version=PLUGIN_VERSION)
@@ -902,7 +1040,6 @@ class CiefpEPGinfoMain(Screen):
         Screen.__init__(self, session)
         self.session = session
 
-        # Widgets
         self["picon"] = Pixmap()
         self["day"] = Label("")
         self["date"] = Label("")
@@ -923,47 +1060,55 @@ class CiefpEPGinfoMain(Screen):
         self["poster"] = Pixmap()
         self["status"] = Label("Ready")
 
-        # State
         self.epg_events = []
         self.current_event = None
         self.current_media_details = None
         self.current_media_type = None
-        self.current_trailer_id = None
+        # ← IZMENA: current_trailer_id uklonjen (trajleri se brišu)
         self._picon_cache = {}
         self.picon_manager = None
 
-        # Actions
+        # ← NOVO: bouquet mod state
+        self.bouquet_mode = False
+        self.bouquet_names = {}          # {display_name: bouquet_file}
+        self.bouquet_order = []          # list[display_name] (redosled)
+        self.bouquet_channels = []       # list[display_name] – trenutni buket
+        self.bouquet_channel_refs = {}   # {display_name: raw_ref_string}
+        self.bouquet_name = ""
+        self.current_bouquet_display = None
+        self.current_bouquet_ref = None  # eServiceReference odabranog kanala (za EPG)
+        self._epg_bouquet_ref = None
+        self._lamedb_cache = None
+
         self["actions"] = ActionMap(
             ["OkCancelActions", "ColorActions", "DirectionActions", "MenuActions", "InfoActions"],
             {
                 "cancel": self.keyBack,
                 "red": self.close,
-                "green": self.filmography_browser,   # bilo: self.show_trailer
+                "green": self.filmography_browser,
                 "yellow": self.cast_explore,
-                "blue": self.open_settings,
+                "blue": self.open_bouquets,          # ← IZMENA: bilo open_settings
                 "ok": self.on_ok,
                 "up": self.on_up,
                 "down": self.on_down,
                 "left": self.on_up,
                 "right": self.on_down,
                 "menu": self.open_settings,
-                "info": self.show_trailer,  # ako već nemaš
+                "info": self.open_settings,          # ← IZMENA: bilo show_trailer
             }, -1)
 
-        # Timers
         self.clock_timer = eTimer()
         self.clock_timer.callback.append(self._update_clock)
         self.clock_timer.start(1000)
 
         self.epg_refresh_timer = eTimer()
-        self.epg_refresh_timer.callback.append(self.refresh_epg)
-        self.epg_refresh_timer.start(60000)  # svakih 60s
+        self.epg_refresh_timer.callback.append(self._refresh_timer_cb)  # ← IZMENA
+        self.epg_refresh_timer.start(60000)
 
         self.onLayoutFinish.append(self.on_start)
         self.onClose.append(self.__onClose)
-        self._saved_media_state = None  # Za povratak sa profila osobe
+        self._saved_media_state = None
 
-        # Update check
         self.container = eConsoleAppContainer()
         self.container.appClosed.append(self.command_finished)
         self.container.dataAvail.append(self.version_data_avail)
@@ -987,10 +1132,9 @@ class CiefpEPGinfoMain(Screen):
         except Exception:
             pass
 
-
     # ---------- START ----------
     def on_start(self):
-        self._init_picon_manager()  # DODAJ OVO
+        self._init_picon_manager()
         self._show_default_poster()
         self._update_clock()
         self.refresh_epg()
@@ -1008,6 +1152,13 @@ class CiefpEPGinfoMain(Screen):
         px = load_pixmap_safe(PLACEHOLDER)
         if px and self["poster"].instance:
             self["poster"].instance.setPixmap(px)
+
+    # ← NOVO: timer callback – samo osveži EPG ako nismo u bouquet modu
+    def _refresh_timer_cb(self):
+        if self.bouquet_mode:
+            return  # u bouquet modu ne diramo listu automatski
+        self.refresh_epg()
+
     # ---------- Update plugin ------------
     def check_for_updates(self):
         if self.version_check_in_progress:
@@ -1065,6 +1216,7 @@ class CiefpEPGinfoMain(Screen):
             self.container.execute("sleep 2 && killall -9 enigma2")
         else:
             self["status"].setText("Update failed.")
+
     # ---------- SERVICE INFO ----------
     def _get_service_name(self):
         try:
@@ -1079,44 +1231,35 @@ class CiefpEPGinfoMain(Screen):
         return "Unknown Channel"
 
     def _init_picon_manager(self):
-        """Inicijalizuj PiconManager sa detekcijom putanje"""
         possible_paths = [
-            "/picon/",  # ← PRVO (gde su tvoji pikoni)
+            "/picon/",
             "/media/usb/picon/",
             "/media/hdd/picon/",
             "/usr/share/enigma2/picon/",
         ]
-
         picon_path = None
         for p in possible_paths:
             if os.path.exists(p):
                 picon_path = p
                 break
-
         if not picon_path:
             picon_path = "/picon/"
-
         self.picon_manager = PiconManager(picon_path)
         print(f"[CiefpEPGinfo] PiconManager initialized with path: {picon_path}")
         print(f"[CiefpEPGinfo] Search dirs: {self.picon_manager.search_dirs}")
 
-    def _load_picon(self):
-        """Učitaj picon – isto kao Signal Info"""
+    # ← IZMENA: _load_picon sada prima i ref (za bouquet mod)
+    def _load_picon(self, ref=None):
         try:
-            service_ref = self.session.nav.getCurrentlyPlayingServiceReference()
-            if not service_ref:
+            if ref is None:
+                ref = self.session.nav.getCurrentlyPlayingServiceReference()
+            if not ref:
                 self["picon"].hide()
                 return
-
-            # === KLJUČNA IZMENA – koristi .toString() ===
-            ref_str = service_ref.toString()
-
-            channel_name = self._get_service_name()
-
+            ref_str = ref.toString()
+            channel_name = get_service_name_from_ref(ref)
             print(f"[CiefpDebug] ref_str = {ref_str}")
             print(f"[CiefpDebug] channel_name = {channel_name}")
-
-            # Koristi PiconManager (kao Signal Info)
             if self.picon_manager:
                 picon_file = self.picon_manager.find_picon(ref_str, channel_name)
                 if picon_file:
@@ -1126,7 +1269,6 @@ class CiefpEPGinfoMain(Screen):
                         self["picon"].show()
                         print(f"[CiefpEPGinfo] Picon loaded: {picon_file}")
                         return
-
             self["picon"].hide()
         except Exception as e:
             print(f"[CiefpEPGinfo] _load_picon error: {e}")
@@ -1136,88 +1278,53 @@ class CiefpEPGinfoMain(Screen):
                 pass
 
     def _find_picon_by_reference(self, folder, ref_str):
-        """
-        Traži picon po service referenci u datom folderu.
-        Konvertuje ':' u '_' i traži .png fajl.
-        Npr: '1:0:19:3C3C:C90:3:EB0000:0:0:0:' -> '1_0_19_3C3C_C90_3_EB0000_0_0_0.png'
-        """
         if not os.path.isdir(folder):
             return None
-
-        # Očisti referencu (ukloni višak ':' sa kraja)
         ref_clean = ref_str.strip().rstrip(":")
-
-        # Generiši različite formate imena fajla
         candidates = [
             ref_clean.replace(":", "_") + ".png",
             ref_clean.replace(":", "_") + ".jpg",
             ref_clean.replace(":", "").replace(" ", "") + ".png",
         ]
-
-        # Probaj i sa malim slovima
         candidates += [c.lower() for c in candidates if c.lower() not in candidates]
-
         for name in candidates:
             path = os.path.join(folder, name)
             if os.path.exists(path):
                 return path
-
         return None
 
     def _find_picon_by_name(self, folder, channel_name):
-        """
-        Traži picon po imenu kanala u datom folderu.
-        Uklanja sufikse (HD, SD, IPTV...) i proba različite varijante.
-        """
         if not os.path.isdir(folder) or not channel_name:
             return None
-
-        # Očisti ime kanala
         clean = channel_name.strip()
         for suffix in [" (IPTV)", " (StreamRelay)", " (HD)", " (SD)", " HD", " SD",
                        " HD)", " (HD", " FHD", " UHD", " 4K"]:
             if clean.lower().endswith(suffix.lower()):
                 clean = clean[:-len(suffix)]
         clean = clean.strip()
-
         if not clean:
             return None
-
         lower = clean.lower()
-
-        # Različite varijante imena
         variants = [
-            lower,
-            lower.replace(" ", ""),
-            lower.replace(" ", "_"),
-            lower.replace(" ", "-"),
-            lower.replace("&", "and"),
-            lower.replace("+", "plus"),
-            lower.replace(".", ""),
-            lower.replace("'", ""),
-            lower.replace(":", ""),
+            lower, lower.replace(" ", ""), lower.replace(" ", "_"),
+            lower.replace(" ", "-"), lower.replace("&", "and"),
+            lower.replace("+", "plus"), lower.replace(".", ""),
+            lower.replace("'", ""), lower.replace(":", ""),
         ]
-        # Ukloni duplikate
         variants = list(dict.fromkeys(variants))
-
-        # Ekstenzije
         extensions = [".png", ".jpg", ".jpeg"]
-
         for name in variants:
             for ext in extensions:
                 path = os.path.join(folder, name + ext)
                 if os.path.exists(path):
                     return path
-            # Probaj i sa velikim slovima (npr. "Jednotka.png")
             for ext in extensions:
                 path = os.path.join(folder, clean + ext)
                 if os.path.exists(path):
                     return path
-
         return None
 
     def _show_picon(self, path):
-        """Pomoćna metoda – postavi picon na widget"""
         try:
             px = LoadPixmap(path)
             if px and self["picon"].instance:
@@ -1228,232 +1335,199 @@ class CiefpEPGinfoMain(Screen):
             print(f"[CiefpEPGinfo] _show_picon error: {e}")
         return False
 
-    # ---------- Filmography ----------
-    def filmography_browser(self):
-        """
-        Zeleno dugme – otvara ChoiceBox sa glumcima, zatim filmografiju,
-        zatim prikazuje odabrani film/seriju u glavnom ekranu.
-        """
-        # Ako već imamo profil osobe – otvori njenu filmografiju direktno
-        if hasattr(self, 'current_person_details') and self.current_person_details:
-            self._show_person_filmography_choicebox()
+    # ---------- ← NOVO: USER BOUQUETS ----------
+    def open_bouquets(self):
+        """Plavo dugme – ChoiceBox sa listom user buketa (kao CiefpE2editor)"""
+        self["status"].setText("Loading bouquets...")
+
+        # Uvek osveži listu (korisnik može da doda novi buket u Enigma2)
+        self.bouquet_names, self.bouquet_order = load_all_bouquets_data()
+
+        if not self.bouquet_order:
+            self["status"].setText("No user bouquets found")
+            self.session.open(
+                MessageBox,
+                "No user bouquets found in /etc/enigma2/bouquets.tv\n\n"
+                "Proveri da li imaš bukete u Enigma2 servisnoj listi.",
+                MessageBox.TYPE_INFO, timeout=5
+            )
             return
 
-        # Ako nemamo TMDB info – reci korisniku
-        if not self.current_media_details:
-            self["status"].setText("No TMDB info loaded")
-            return
-
-        credits = self.current_media_details.get("credits", {})
-        cast = credits.get("cast", [])
-        crew = credits.get("crew", [])
-        directors = [c for c in crew if c.get("job") == "Director"]
-
-        # Napravi ChoiceBox listu: direktori prvo, pa glumci
         menu = []
-        if directors:
-            for d in directors[:3]:
-                menu.append((f"🎬 Director: {d.get('name', '')}", d))
-        for i, a in enumerate(cast[:25]):  # više glumaca (25)
-            name = a.get("name", "")
-            char = a.get("character", "")
-            if len(char) > 30:
-                char = char[:30] + "…"
-            if char:
-                menu.append((f"{i + 1}. {name} ({char})", a))
-            else:
-                menu.append((f"{i + 1}. {name}", a))
+        if self.bouquet_mode:
+            menu.append(("← Back to current channel EPG", "BACK"))
+            menu.append(("─" * 30, None))
 
-        if not menu:
-            self["status"].setText("No cast info")
-            return
+        for name in self.bouquet_order:
+            menu.append((name, name))
 
-        def person_selected(choice):
+        def cb(choice):
             if not choice:
                 return
-            person = choice[1]
-            name = person.get("name", "")
-            if not name:
+            action = choice[1]
+            if action is None:
                 return
-            self["status"].setText(f"Loading filmography: {name}...")
-            threading.Thread(
-                target=self._load_person_for_filmography,
-                args=(name,),
-                daemon=True
-            ).start()
+            if action == "BACK":
+                self._exit_bouquet_mode()
+                return
+            # action = display_name
+            bouquet_file = self.bouquet_names.get(action)
+            if bouquet_file:
+                self._enter_bouquet_mode(action, bouquet_file)
 
-        title = self.current_media_details.get("title") or \
-                self.current_media_details.get("name", "")
         self.session.openWithCallback(
-            person_selected, ChoiceBox,
-            title=f"Filmography Browser: {title}",
+            cb, ChoiceBox,
+            title="User Bouquets",
             list=menu
         )
 
-    def _load_person_for_filmography(self, name):
-        """Učitaj osobu i otvori filmografiju kao ChoiceBox"""
-        api_key = config.plugins.ciefpepginfo.tmdb_api_key.value.strip()
-        if not api_key:
-            self["status"].setText("TMDB API key not set")
+    def _enter_bouquet_mode(self, display_name, bouquet_file):
+        """Učitaj kanale iz buketa u levu listu"""
+        self["status"].setText(f"Loading bouquet: {display_name}...")
+
+        # Keširaj lamedb (da ne čitamo svaki put)
+        if self._lamedb_cache is None:
+            self._lamedb_cache = parse_lamedb_simple()
+
+        channels, refs = load_bouquet_channels_data(bouquet_file, self._lamedb_cache)
+
+        if not channels:
+            self["status"].setText(f"Bouquet '{display_name}' is empty")
             return
 
-        # Pretraga osobe
-        result = _tmdb_search_person(name, api_key)
-        if not result:
-            self["status"].setText(f"Person not found: {name}")
-            return
+        self.bouquet_mode = True
+        self.bouquet_name = display_name
+        self.current_bouquet_display = display_name
+        self.bouquet_channels = channels
+        self.bouquet_channel_refs = refs
 
-        person_id = result.get("id")
-        details = _tmdb_person_details(person_id, api_key)
-        if not details:
-            self["status"].setText(f"Person details error: {name}")
-            return
+        self["service_name"].setText(f"📺 {display_name}")
 
-        # Sačuvaj detalje osobe (za povratak ako zatreba)
-        self.current_person_details = details
-        self.current_person_name = details.get("name", name)
+        # Napuni MenuList
+        menu_items = []
+        for idx, ch_name in enumerate(channels):
+            display = ch_name
+            if len(display) > 55:
+                display = display[:55] + "…"
+            menu_items.append(f"  {idx + 1}. {display}")
+        self["epg_list"].setList(menu_items)
+        self["epg_list"].moveToIndex(0)
 
-        # Prikaži filmografiju kao ChoiceBox
-        self._show_person_filmography_choicebox()
+        # Nađi prvi pravi kanal (preskoči markere)
+        first_idx = self._find_first_real_channel(0)
+        self["epg_list"].moveToIndex(first_idx)
+        self._on_bouquet_channel_changed(first_idx)
+        self["status"].setText(f"Bouquet: {display_name}  (OK = play, BACK = exit)")
 
-    def _show_person_filmography_choicebox(self):
+    def _find_first_real_channel(self, start_idx=0):
+        """Vraća indeks prvog pravog kanala (ne markera) od start_idx."""
+        for i in range(start_idx, len(self.bouquet_channels)):
+            raw = self.bouquet_channel_refs.get(self.bouquet_channels[i], "")
+            if raw and "1:64:" not in raw and not self.bouquet_channels[i].startswith("["):
+                return i
+        return start_idx  # fallback
+
+    def _exit_bouquet_mode(self):
+        """Vrati se na normalni EPG mod (trenutni kanal)"""
+        self.bouquet_mode = False
+        self.bouquet_name = ""
+        self.bouquet_channels = []
+        self.bouquet_channel_refs = {}
+        self.current_bouquet_display = None
+        self.current_bouquet_ref = None
+        self._epg_bouquet_ref = None
+        self["status"].setText("Back to current channel")
+        self.refresh_epg()
+
+    def _load_bouquet_channel_epg(self, display_name):
         """
-        ChoiceBox sa filmografijom osobe:
-        - 10 najpoznatijih filmova
-        - 10 najpoznatijih serija
+        Učitaj EPG za kanal iz buketa.
+        - Ako je DVB servis → eServiceReference → eEPGCache lookup
+        - Ako je IPTV/StreamRelay → nema EPG, ali pokušaj TMDB po imenu kanala
         """
-        if not self.current_person_details:
-            self["status"].setText("No person loaded")
+        raw_ref = self.bouquet_channel_refs.get(display_name)
+        if not raw_ref:
             return
 
-        person = self.current_person_details
-        person_name = person.get("name", "Unknown")
+        self.current_bouquet_display = display_name
 
-        movie_credits = person.get("movie_credits", {}).get("cast", [])
-        tv_credits = person.get("tv_credits", {}).get("cast", [])
+        ref = raw_ref_to_eServiceReference(raw_ref)
 
-        # Ukloni duplikate
-        seen_m = set()
-        unique_movies = []
-        for m in movie_credits:
-            if m.get("id") not in seen_m:
-                seen_m.add(m.get("id"))
-                unique_movies.append(m)
+        # Ažuriraj ime kanala u zaglavlju
+        self["service_name"].setText(f"📺 {self.bouquet_name} – {display_name}")
 
-        seen_t = set()
-        unique_tv = []
-        for t in tv_credits:
-            if t.get("id") not in seen_t:
-                seen_t.add(t.get("id"))
-                unique_tv.append(t)
+        # Picon – samo za DVB
+        if ref:
+            self._load_picon(ref)
+        else:
+            self["picon"].hide()
 
-        # Sortiraj po popularnosti (kao u Known For)
-        def score(x):
-            pop = x.get("popularity", 0) or 0
-            votes = x.get("vote_count", 0) or 0
-            return votes * 10 + pop
+        # EPG lookup
+        if ref:
+            self._epg_bouquet_ref = ref
+            self.epg_events = get_epg_event_list(max_items=12, service=ref)
+        else:
+            # IPTV / StreamRelay – nema EPG
+            self._epg_bouquet_ref = None
+            self.epg_events = []
 
-        unique_movies.sort(key=score, reverse=True)
-        unique_tv.sort(key=score, reverse=True)
+        if not self.epg_events:
+            # Nema EPG – prikaži ime kanala + pokušaj TMDB po imenu kanala
+            self["title"].setText(display_name)
+            self["epg_title"].setText("EPG: no data")
+            self["duration"].setText("")
+            self["rating"].setText("")
+            self["imdb_rating"].setText("")
+            self["genres"].setText("")
+            self["director"].setText("")
+            self["plot"].setText("No EPG data for this channel.")
+            self["cast_header"].setText("")
+            self["cast_col1"].setText("")
+            self["cast_col2"].setText("")
+            self._set_poster(PLACEHOLDER)
+            self.current_media_details = None
+            self.current_media_type = None
+            self.current_event = None
 
-        top_movies = unique_movies[:10]
-        top_tv = unique_tv[:10]
-
-        # Napravi ChoiceBox listu
-        menu = []
-
-        if top_movies:
-            menu.append((f"── MOVIES ({len(top_movies)}) ──", None))
-            for m in top_movies:
-                title = m.get("title", "N/A")
-                year = (m.get("release_date") or "")[:4]
-                rating = m.get("vote_average", 0) or 0
-                year_str = f" ({year})" if year else ""
-                rating_str = f" ★{rating:.1f}" if rating > 0 else ""
-                menu.append((
-                    f"🎬 {title}{year_str}{rating_str}",
-                    ("movie", m)
-                ))
-
-        if top_tv:
-            menu.append((f"── TV SERIES ({len(top_tv)}) ──", None))
-            for t in top_tv:
-                name = t.get("name", "N/A")
-                year = (t.get("first_air_date") or "")[:4]
-                rating = t.get("vote_average", 0) or 0
-                year_str = f" ({year})" if year else ""
-                rating_str = f" ★{rating:.1f}" if rating > 0 else ""
-                menu.append((
-                    f"📺 {name}{year_str}{rating_str}",
-                    ("tv", t)
-                ))
-
-        if not menu:
-            self["status"].setText(f"No filmography for {person_name}")
-            return
-
-        def media_selected(choice):
-            if not choice or choice[1] is None:
-                return
-            media_type, media_data = choice[1]
-            media_id = media_data.get("id")
-            title = media_data.get("title") or media_data.get("name", "Unknown")
-            if media_id:
-                self["status"].setText(f"Loading {title}...")
+            # Opcioni TMDB lookup po imenu kanala
+            api_key = config.plugins.ciefpepginfo.tmdb_api_key.value.strip()
+            clean_ch = re.sub(r"\s*\((IPTV|StreamRelay)\)\s*$", "", display_name).strip()
+            if api_key and clean_ch and not is_generic_title(clean_ch):
                 threading.Thread(
-                    target=self._load_media_from_filmography,
-                    args=(media_id, media_type, title),
+                    target=self._fetch_tmdb_async,
+                    args=(clean_ch, None, api_key, ""),
                     daemon=True
                 ).start()
-
-        self.session.openWithCallback(
-            media_selected, ChoiceBox,
-            title=f"Filmography: {person_name}",
-            list=menu
-        )
-
-    def _load_media_from_filmography(self, media_id, media_type, media_title):
-        """Učitaj film/seriju iz filmografije i prikaži u glavnom ekranu"""
-        api_key = config.plugins.ciefpepginfo.tmdb_api_key.value.strip()
-        if not api_key:
-            self["status"].setText("TMDB API key not set")
             return
 
-        try:
-            details = _tmdb_details(media_id, media_type, api_key)
-            if not details:
-                self["status"].setText("Error loading media details")
-                return
+        # Ima EPG – obradi prvi događaj
+        self.current_event = self.epg_events[0]
+        self._process_event(self.current_event, is_current=True)
 
-            # Sačuvaj prethodno stanje (da se možemo vratiti na EPG film)
-            # Ako već nemamo sačuvano – sačuvaj trenutni EPG film
-            if not self._saved_media_state:
-                self._saved_media_state = {
-                    "media_details": self.current_media_details,
-                    "media_type": self.current_media_type,
-                    "trailer_id": self.current_trailer_id,
-                }
+    def _on_bouquet_channel_changed(self, idx):
+        """Korisnik je promenio kanal gore/dole – učitaj EPG za njega.
+        Markeri (#SERVICE 1:64:) se preskaču – ostaje prethodni kanal.
+        """
+        if not self.bouquet_mode:
+            return
+        if not (0 <= idx < len(self.bouquet_channels)):
+            return
 
-            self.current_media_details = details
-            self.current_media_type = media_type
+        display_name = self.bouquet_channels[idx]
+        raw_ref = self.bouquet_channel_refs.get(display_name, "")
 
-            # Prikaži u glavnom ekranu
-            self._update_ui_with_tmdb(details, media_type)
+        # Preskoči markere i prazne unose – ne diraj trenutni prikaz
+        if not raw_ref or "1:64:" in raw_ref or display_name.startswith("["):
+            self["status"].setText(f"Marker: {display_name}  (nije kanal)")
+            return
 
-            # Ažuriraj epg_title da pokaže odakle je film
-            person_name = getattr(self, 'current_person_name', '')
-            if person_name:
-                self["epg_title"].setText(f"From filmography: {person_name}")
-
-            self["status"].setText(f"Loaded: {media_title} ✓")
-
-        except Exception as e:
-            print("[CiefpEPGinfo] load media from filmography error:", e)
-            self["status"].setText("Error loading media")
+        self._load_bouquet_channel_epg(display_name)
 
     # ---------- EPG ----------
     def refresh_epg(self):
-        """Ponovo učitaj EPG listu i ažuriraj UI"""
+        """Ponovo učitaj EPG listu i ažuriraj UI (normalni mod)"""
+        if self.bouquet_mode:
+            return  # u bouquet modu ne diramo
         self["status"].setText("Loading EPG...")
         self.epg_events = get_epg_event_list(max_items=12)
         self["service_name"].setText(self._get_service_name())
@@ -1464,7 +1538,6 @@ class CiefpEPGinfoMain(Screen):
             self["status"].setText("No EPG data")
             return
 
-        # Napravi listu za MenuList
         menu_items = []
         for idx, ev in enumerate(self.epg_events):
             begin = ev.get("begin")
@@ -1475,8 +1548,6 @@ class CiefpEPGinfoMain(Screen):
                     hhmm = "--:--"
             else:
                 hhmm = "--:--"
-
-            # Dan (Sat/Ned...)
             try:
                 if begin:
                     day_short = time.strftime("%a", time.localtime(int(begin)))
@@ -1484,8 +1555,6 @@ class CiefpEPGinfoMain(Screen):
                     day_short = ""
             except Exception:
                 day_short = ""
-
-            # Datum
             try:
                 if begin:
                     date_short = time.strftime("%d. %b", time.localtime(int(begin)))
@@ -1493,22 +1562,17 @@ class CiefpEPGinfoMain(Screen):
                     date_short = ""
             except Exception:
                 date_short = ""
-
             name = ev.get("name", "")
             if len(name) > 55:
                 name = name[:55] + "…"
-
             if idx == 0:
                 prefix = "▶"
             else:
                 prefix = "  "
-
             item_text = f"{prefix} {day_short} {date_short}  {hhmm}  {name}"
             menu_items.append(item_text)
 
         self["epg_list"].setList(menu_items)
-
-        # Prikaži prvi (trenutni) događaj
         self.current_event = self.epg_events[0]
         self["epg_list"].moveToIndex(0)
         self._process_event(self.current_event, is_current=True)
@@ -1523,21 +1587,17 @@ class CiefpEPGinfoMain(Screen):
         ext = event.get("ext", "")
         description = (short + " " + ext).strip()
 
-        # Očisti naslov od [HD], (2018), itd.
         title = re.sub(r"\s*\[.*?\]|\s*\(.*?\)|\s*-\s*.+$", "", raw_title).strip()
         title = re.sub(r"^Film[:\-]?\s*|^Movie[:\-]?\s*", "", title, flags=re.I).strip()
 
-        # Izvuci godinu
         year = None
         m = re.search(r"\b(19|20)\d{2}\b", raw_title + " " + description)
         if m:
             year = int(m.group(0))
 
-        # Osnovni prikaz iz EPG
         self["title"].setText(title or raw_title)
         self["epg_title"].setText(f"EPG: {raw_title}")
 
-        # Trajanje iz EPG
         dur = event.get("duration")
         if dur:
             minutes = int(dur) // 60
@@ -1545,16 +1605,14 @@ class CiefpEPGinfoMain(Screen):
         else:
             self["duration"].setText("Duration: N/A")
 
-        # Reset TMDB polja
         self["rating"].setText("")
         self["imdb_rating"].setText("")
         self["genres"].setText("")
         self["director"].setText("")
-        self.current_trailer_id = None
+        # ← IZMENA: current_trailer_id uklonjen
         self.current_media_details = None
         self.current_media_type = None
 
-        # Opis iz EPG (ako nema TMDB)
         if description:
             if len(description) > 750:
                 cut = description[:750].rfind(". ")
@@ -1566,15 +1624,10 @@ class CiefpEPGinfoMain(Screen):
         else:
             self["plot"].setText("Plot:\nNo description available.")
 
-        # Reset cast polja
         self["cast_header"].setText("")
         self["cast_col1"].setText("")
         self["cast_col2"].setText("")
 
-        # ============================================================
-        # 1. PRVO PROVERI TMDB (ako ima API key)
-        # ============================================================
-        # === DODAJ OVO ===
         print(f"[CiefpDebug] ===== PROCESS EVENT =====")
         print(f"[CiefpDebug] raw_title = '{raw_title}'")
         print(f"[CiefpDebug] cleaned title = '{title}'")
@@ -1590,7 +1643,6 @@ class CiefpEPGinfoMain(Screen):
             ).start()
             return
 
-        # Generičan naslov ili nema API key – preskoči TMDB
         print(f"[CiefpDebug] Skipping TMDB (generic or no key): '{title}'")
         self["status"].setText("Non-TMDB content (EPG only)")
         non_tmdb, placeholder = detect_non_tmdb(title, description)
@@ -1599,7 +1651,6 @@ class CiefpEPGinfoMain(Screen):
         else:
             self._set_poster(PLACEHOLDER)
 
-        # Prevod EPG opisa
         if (config.plugins.ciefpepginfo.translate_epg.value
                 and config.plugins.ciefpepginfo.translate_epg_description.value
                 and config.plugins.ciefpepginfo.groq_api_key.value.strip()):
@@ -1611,67 +1662,24 @@ class CiefpEPGinfoMain(Screen):
             ).start()
         return
 
-        # ============================================================
-        # 2. AKO NEMA TMDB API KEY → detect_non_tmdb
-        # ============================================================
-        self["status"].setText("TMDB API key not set – EPG only")
-        non_tmdb, placeholder = detect_non_tmdb(title, description)
-        if non_tmdb:
-            self._set_poster(placeholder)
-        else:
-            self._set_poster(PLACEHOLDER)
-
-        # ============================================================
-        # 3. Prevod EPG opisa (ako je uključen)
-        # ============================================================
-        if (config.plugins.ciefpepginfo.translate_epg.value
-                and config.plugins.ciefpepginfo.translate_epg_description.value
-                and config.plugins.ciefpepginfo.groq_api_key.value.strip()):
-            target = config.plugins.ciefpepginfo.translate_to.value
-            threading.Thread(
-                target=self._translate_description_async,
-                args=(description, target),
-                daemon=True
-            ).start()
-
     def _fetch_tmdb_async(self, title, year, api_key, epg_description):
-        """
-        TMDB pretraga u pozadini.
-        Ako TMDB nađe film → prikaži detalje.
-        Ako TMDB ne nađe → pozovi detect_non_tmdb kao fallback.
-        """
         try:
-            # ============================================================
-            # 1. TMDB pretraga
-            # ============================================================
             result, media_type = _tmdb_search_with_translation(title, year, api_key)
-
             if not result:
-                # TMDB ne zna film → fallback na detect_non_tmdb
                 print(f"[CiefpEPGinfo] TMDB not found: {title}")
                 self._fallback_to_epg(title, epg_description, "Not found on TMDB")
                 return
-
             media_id = result.get("id")
             details = _tmdb_details(media_id, media_type, api_key)
-
             if not details:
                 self._fallback_to_epg(title, epg_description, "TMDB details error")
                 return
-
-            # ============================================================
-            # 2. TMDB je našao film → prikaži TMDB detalje
-            # ============================================================
             self.current_media_details = details
             self.current_media_type = media_type
             self._update_ui_with_tmdb(details, media_type)
 
-            # ============================================================
-            # 3. Prevod EPG opisa (ako je uključen i ako nema TMDB overview-a)
-            # ============================================================
             overview = (details.get("overview") or "").strip()
             if not overview and epg_description:
-                # TMDB nema opis – koristi EPG opis (prevedi ako je uključeno)
                 if (config.plugins.ciefpepginfo.translate_epg.value
                         and config.plugins.ciefpepginfo.translate_epg_description.value
                         and config.plugins.ciefpepginfo.groq_api_key.value.strip()):
@@ -1681,28 +1689,18 @@ class CiefpEPGinfoMain(Screen):
                         args=(epg_description, target),
                         daemon=True
                     ).start()
-
         except Exception as e:
             print("[CiefpEPGinfo] fetch_tmdb_async error:", e)
             self._fallback_to_epg(title, epg_description, "TMDB fetch error")
 
     def _fallback_to_epg(self, title, description, reason="Fallback"):
-        """
-        Fallback kada TMDB ne nađe film:
-        1. Proveri detect_non_tmdb (sport, news, music, kids, docu)
-        2. Ako nije non-TMDB → placeholder.png
-        3. Prevedi EPG opis ako je uključeno
-        """
         self["status"].setText(f"{reason} – EPG only")
-
         non_tmdb, placeholder = detect_non_tmdb(title, description)
         if non_tmdb:
             print(f"[CiefpEPGinfo] detect_non_tmdb hit for: {title}")
             self._set_poster(placeholder)
         else:
             self._set_poster(PLACEHOLDER)
-
-        # Prevod EPG opisa
         if (config.plugins.ciefpepginfo.translate_epg.value
                 and config.plugins.ciefpepginfo.translate_epg_description.value
                 and config.plugins.ciefpepginfo.groq_api_key.value.strip()):
@@ -1714,14 +1712,12 @@ class CiefpEPGinfoMain(Screen):
             ).start()
 
     def _update_ui_with_tmdb(self, details, media_type):
-        """Ažurira UI sa TMDB podacima"""
         title = details.get("title") if media_type == "movie" else details.get("name", "")
         year = (details.get("release_date") or "")[:4] if media_type == "movie" else \
                (details.get("first_air_date") or "")[:4]
 
         self["title"].setText(title + (f" ({year})" if year else ""))
 
-        # Trajanje
         if media_type == "movie":
             runtime = details.get("runtime")
             dur_text = f"Duration: {runtime} min" if runtime else self["duration"].text
@@ -1733,11 +1729,9 @@ class CiefpEPGinfoMain(Screen):
                 dur_text = self["duration"].text
         self["duration"].setText(dur_text)
 
-        # TMDB rating
         vote = details.get("vote_average", 0)
         self["rating"].setText(f"TMDB: {vote:.1f}/10 ★" if vote else "TMDB: N/A")
 
-        # IMDB rating (asinhrono)
         if config.plugins.ciefpepginfo.show_imdb_rating.value and config.plugins.ciefpepginfo.omdb_api_key.value:
             self["imdb_rating"].setText("IMDB: Loading...")
             threading.Thread(
@@ -1748,11 +1742,9 @@ class CiefpEPGinfoMain(Screen):
         else:
             self["imdb_rating"].setText("")
 
-        # Žanr
         genres = [g["name"] for g in details.get("genres", [])]
         self["genres"].setText("Genres: " + (", ".join(genres) if genres else "N/A"))
 
-        # Režiser
         credits = details.get("credits", {})
         crew = credits.get("crew", [])
         directors = [c["name"] for c in crew if c.get("job") == "Director"]
@@ -1770,8 +1762,6 @@ class CiefpEPGinfoMain(Screen):
             else:
                 self["director"].setText("")
 
-        # Opis (TMDB ima prioritet, ali ako je prazan koristi EPG)
-        # Opis (TMDB ima prioritet)
         overview = (details.get("overview") or "").strip()
         if overview:
             if len(overview) > 750:
@@ -1781,27 +1771,21 @@ class CiefpEPGinfoMain(Screen):
                 else:
                     overview = overview[:750] + " ..."
             self["plot"].setText("Plot:\n" + overview)
-
-            # === DODAJ PREVOD TMDB OPISA ===
             if (config.plugins.ciefpepginfo.translate_epg.value
                     and config.plugins.ciefpepginfo.translate_tmdb_overview.value
                     and config.plugins.ciefpepginfo.groq_api_key.value.strip()):
                 target = config.plugins.ciefpepginfo.translate_to.value
                 threading.Thread(
-                    target=self._translate_tmdb_overview_async,  # ✅ prava metoda
-                    args=(overview, target),  # ✅ prava promenljiva
+                    target=self._translate_tmdb_overview_async,
+                    args=(overview, target),
                     daemon=True
                 ).start()
-        # ako nema, ostaje EPG opis
-        # ===== CAST 2x5 =====
-        cast = credits.get("cast", [])[:10]  # Uzmi prvih 10
 
+        cast = credits.get("cast", [])[:10]
         if cast:
             self["cast_header"].setText("Cast:")
-
-            # Podeli na dva reda
-            first_row = cast[:5]  # Prvih 5
-            second_row = cast[5:10]  # Drugih 5
+            first_row = cast[:5]
+            second_row = cast[5:10]
 
             def format_actor(actor):
                 name = actor.get("name", "").strip()
@@ -1812,11 +1796,8 @@ class CiefpEPGinfoMain(Screen):
                     return f"• {name} as {char}"
                 return f"• {name}"
 
-            # Prvi red – 5 glumaca, svaki u svom redu, sabijeno
             col1_text = "\n".join([format_actor(a) for a in first_row]) if first_row else ""
             self["cast_col1"].setText(col1_text)
-
-            # Drugi red – 5 glumaca, svaki u svom redu, sabijeno
             col2_text = "\n".join([format_actor(a) for a in second_row]) if second_row else ""
             self["cast_col2"].setText(col2_text)
         else:
@@ -1824,47 +1805,20 @@ class CiefpEPGinfoMain(Screen):
             self["cast_col1"].setText("")
             self["cast_col2"].setText("")
 
-        # Trailer
-        api_key = config.plugins.ciefpepginfo.tmdb_api_key.value.strip()
-        media_id = details.get("id")
-        if api_key and media_id:
-            threading.Thread(
-                target=self._fetch_trailer_async,
-                args=(media_id, media_type, api_key),
-                daemon=True
-            ).start()
-        # ============================================================
-        # POSTER – hijerarhija fallback-a
-        # ============================================================
+        # ← IZMENA: trajler fetch uklonjen
+
         poster_path = details.get("poster_path")
-        backdrop_path = details.get("backdrop_path")
         media_id = details.get("id")
-
-        # 1. PRVO: TMDB poster_path (najbolje)
         if poster_path and media_id:
-            print(f"[CiefpEPGinfo] Poster: TMDB poster_path")
             self._download_poster_async(poster_path, media_id, media_type)
-
-        # 2. AKO NEMA POSTER: probaj TMDB backdrop_path (kao poster)
-        elif backdrop_path and media_id:
-            print(f"[CiefpEPGinfo] Poster: TMDB backdrop_path (fallback)")
-            self._download_backdrop_as_poster_async(backdrop_path, media_id, media_type)
-
-        # 3. AKO NEMA NI BACKDROP: probaj žanr (sport, news, music, kids, docu)
         else:
-            print(f"[CiefpEPGinfo] Poster: genre placeholder")
             genres_list = [g["name"] for g in details.get("genres", [])]
             placeholder = choose_placeholder(genres_list)
-
-            # 4. AKO ŽANR NIJE PREPOZNAT: movie.png / series.png
             if placeholder == PLACEHOLDER:
-                print(f"[CiefpEPGinfo] Poster: movie/series placeholder")
                 if media_type == "movie":
                     placeholder = PLACEHOLDER_MOVIE if os.path.exists(PLACEHOLDER_MOVIE) else PLACEHOLDER
                 elif media_type == "tv":
                     placeholder = PLACEHOLDER_SERIES if os.path.exists(PLACEHOLDER_SERIES) else PLACEHOLDER
-
-            # 5. AKO NIŠTA NE POSTOJI: placeholder.png
             self._set_poster(placeholder)
 
     def _fetch_imdb_async(self, details, media_type):
@@ -1878,12 +1832,7 @@ class CiefpEPGinfoMain(Screen):
         except Exception:
             self["imdb_rating"].setText("IMDB: N/A")
 
-    def _fetch_trailer_async(self, media_id, media_type, api_key):
-        try:
-            key = _tmdb_trailer(media_id, media_type, api_key)
-            self.current_trailer_id = key
-        except Exception:
-            self.current_trailer_id = None
+    # ← IZMENA: _fetch_trailer_async je UKLONJEN
 
     # ---------- POSTER ----------
     def _download_poster_async(self, poster_path, media_id, media_type):
@@ -1917,7 +1866,6 @@ class CiefpEPGinfoMain(Screen):
         threading.Thread(target=worker, daemon=True).start()
 
     def _set_poster(self, path):
-        """Bezbedno postavljanje postera"""
         px = load_pixmap_safe(path)
         if px and self["poster"].instance:
             try:
@@ -1926,7 +1874,6 @@ class CiefpEPGinfoMain(Screen):
                 return
             except Exception:
                 pass
-        # Fallback na default placeholder
         px = load_pixmap_safe(PLACEHOLDER)
         if px and self["poster"].instance:
             try:
@@ -1935,45 +1882,45 @@ class CiefpEPGinfoMain(Screen):
             except Exception:
                 pass
 
-    def _download_backdrop_as_poster_async(self, backdrop_path, media_id, media_type):
-        """
-        Download backdrop slike i koristi je kao poster.
-        Backdrop je širi (16:9), ali se može skalirati u poster widget.
-        """
-        if not backdrop_path or not media_id:
-            self._set_poster(PLACEHOLDER)
-            return
-        if not config.plugins.ciefpepginfo.cache_enabled.value:
-            self._set_poster(PLACEHOLDER)
-            return
-
-        def worker():
-            try:
-                folder = ensure_cache_folder()
-                fname = os.path.join(
-                    folder,
-                    f"backdrop_{media_type}_{media_id}_{os.path.basename(backdrop_path)}"
-                )
-                if not os.path.exists(fname):
-                    # Backdrop je obično w780 ili w1280
-                    # Koristimo w780 da bude približno veličini postera
-                    url = "https://image.tmdb.org/t/p/w780" + backdrop_path
-                    ctx = ssl.create_default_context()
-                    ctx.check_hostname = False
-                    ctx.verify_mode = ssl.CERT_NONE
-                    data = urllib.request.urlopen(url, context=ctx, timeout=15).read()
-                    with open(fname, "wb") as f:
-                        f.write(data)
-                self._set_poster(fname)
-            except Exception as e:
-                print("[CiefpEPGinfo] backdrop download error:", e)
-                self._set_poster(PLACEHOLDER)
-
-        threading.Thread(target=worker, daemon=True).start()
-
     # ---------- ACTIONS ----------
     def on_ok(self):
-        """OK dugme – prikaži TMDB detalje za odabrani EPG događaj"""
+        # ← U bouquet modu OK pokreće kanal
+        if self.bouquet_mode:
+            idx = self["epg_list"].getSelectedIndex()
+            if not (0 <= idx < len(self.bouquet_channels)):
+                return
+            display_name = self.bouquet_channels[idx]
+            raw_ref = self.bouquet_channel_refs.get(display_name, "")
+
+            # Marker – ne radi ništa
+            if not raw_ref or "1:64:" in raw_ref or display_name.startswith("["):
+                self["status"].setText(f"Marker: {display_name}  (nije kanal)")
+                return
+
+            ref = raw_ref_to_eServiceReference(raw_ref)
+            if ref is None:
+                try:
+                    ref_str = raw_ref.strip()
+                    if ref_str.startswith("#SERVICE"):
+                        ref_str = ref_str[9:].strip()
+                    ref = eServiceReference(ref_str)
+                    if not ref.valid():
+                        self["status"].setText("Cannot play this stream")
+                        return
+                except Exception as e:
+                    print(f"[CiefpEPGinfo] IPTV play error: {e}")
+                    self["status"].setText("Play error")
+                    return
+
+            self["status"].setText(f"Playing: {display_name}...")
+            try:
+                self.session.nav.playService(ref)
+            except Exception as e:
+                print(f"[CiefpEPGinfo] playService error: {e}")
+                self["status"].setText("Play error")
+            return
+
+        # Normalni mod – TMDB detalji
         idx = self["epg_list"].getSelectedIndex()
         if 0 <= idx < len(self.epg_events):
             self.current_event = self.epg_events[idx]
@@ -1982,58 +1929,22 @@ class CiefpEPGinfoMain(Screen):
     def on_up(self):
         try:
             self["epg_list"].up()
+            if self.bouquet_mode:
+                self._on_bouquet_channel_changed(self["epg_list"].getSelectedIndex())
         except Exception:
             pass
 
     def on_down(self):
         try:
             self["epg_list"].down()
+            if self.bouquet_mode:
+                self._on_bouquet_channel_changed(self["epg_list"].getSelectedIndex())
         except Exception:
             pass
 
-    def show_trailer(self):
-        """Zeleno dugme – pusti trejler"""
-        if not self.current_trailer_id:
-            self["status"].setText("No trailer available")
-            return
-        title = ""
-        if self.current_media_details:
-            title = self.current_media_details.get("title") or \
-                    self.current_media_details.get("name", "")
-        self["status"].setText("Playing trailer...")
-        self._play_youtube(self.current_trailer_id, title)
-
-    def _play_youtube(self, yt_id, title=""):
-        """Reprodukcija YouTube trejlera preko yt-dlp"""
-        try:
-            url = f"https://www.youtube.com/watch?v={yt_id}"
-            cmd = ["yt-dlp", "-g", "-f", "best", url]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-            if result.returncode != 0:
-                cmd = ["yt-dlp", "-g", url]
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-            if result.returncode != 0:
-                self["status"].setText("yt-dlp failed")
-                return
-            video_url = result.stdout.strip().split("\n")[0]
-            if not video_url:
-                self["status"].setText("No stream URL")
-                return
-            ref = eServiceReference(4097, 0, video_url)
-            try:
-                if title:
-                    ref.setName(f"{title} - Trailer")
-            except Exception:
-                pass
-            from Screens.InfoBar import InfoBar
-            if InfoBar and InfoBar.instance:
-                InfoBar.instance.session.nav.playService(ref)
-        except Exception as e:
-            print("[CiefpEPGinfo] play youtube error:", e)
-            self["status"].setText("Trailer error")
+    # ← IZMENA: show_trailer / _play_youtube su UKLONJENI
 
     def _translate_description_async(self, text, target):
-        """Prevod EPG opisa u pozadini"""
         try:
             translated = _translate_cached(text, target)
             self["plot"].setText("Plot:\n" + translated)
@@ -2042,7 +1953,6 @@ class CiefpEPGinfoMain(Screen):
             print("[CiefpEPGinfo] translate description error:", e)
 
     def _translate_tmdb_overview_async(self, text, target):
-        """Prevod TMDB Plota u pozadini"""
         try:
             translated = _translate_cached(text, target)
             self["plot"].setText("Plot:\n" + translated)
@@ -2051,7 +1961,6 @@ class CiefpEPGinfoMain(Screen):
             print("[CiefpEPGinfo] translate tmdb overview error:", e)
 
     def _translate_biography_async(self, text, target):
-        """Prevod Biography u pozadini"""
         try:
             translated = _translate_cached(text, target)
             self["plot"].setText("Biography:\n" + translated)
@@ -2059,8 +1968,11 @@ class CiefpEPGinfoMain(Screen):
         except Exception as e:
             print("[CiefpEPGinfo] translate biography error:", e)
 
-    def cast_explore(self):
-        """Žuto dugme – Cast explorer"""
+    # ---------- Filmography ----------
+    def filmography_browser(self):
+        if hasattr(self, 'current_person_details') and self.current_person_details:
+            self._show_person_filmography_choicebox()
+            return
         if not self.current_media_details:
             self["status"].setText("No TMDB info loaded")
             return
@@ -2068,7 +1980,171 @@ class CiefpEPGinfoMain(Screen):
         cast = credits.get("cast", [])
         crew = credits.get("crew", [])
         directors = [c for c in crew if c.get("job") == "Director"]
+        menu = []
+        if directors:
+            for d in directors[:3]:
+                menu.append((f"🎬 Director: {d.get('name', '')}", d))
+        for i, a in enumerate(cast[:25]):
+            name = a.get("name", "")
+            char = a.get("character", "")
+            if len(char) > 30:
+                char = char[:30] + "…"
+            if char:
+                menu.append((f"{i + 1}. {name} ({char})", a))
+            else:
+                menu.append((f"{i + 1}. {name}", a))
+        if not menu:
+            self["status"].setText("No cast info")
+            return
 
+        def person_selected(choice):
+            if not choice:
+                return
+            person = choice[1]
+            name = person.get("name", "")
+            if not name:
+                return
+            self["status"].setText(f"Loading filmography: {name}...")
+            threading.Thread(
+                target=self._load_person_for_filmography,
+                args=(name,),
+                daemon=True
+            ).start()
+
+        title = self.current_media_details.get("title") or \
+                self.current_media_details.get("name", "")
+        self.session.openWithCallback(
+            person_selected, ChoiceBox,
+            title=f"Filmography Browser: {title}",
+            list=menu
+        )
+
+    def _load_person_for_filmography(self, name):
+        api_key = config.plugins.ciefpepginfo.tmdb_api_key.value.strip()
+        if not api_key:
+            self["status"].setText("TMDB API key not set")
+            return
+        result = _tmdb_search_person(name, api_key)
+        if not result:
+            self["status"].setText(f"Person not found: {name}")
+            return
+        person_id = result.get("id")
+        details = _tmdb_person_details(person_id, api_key)
+        if not details:
+            self["status"].setText(f"Person details error: {name}")
+            return
+        self.current_person_details = details
+        self.current_person_name = details.get("name", name)
+        self._show_person_filmography_choicebox()
+
+    def _show_person_filmography_choicebox(self):
+        if not self.current_person_details:
+            self["status"].setText("No person loaded")
+            return
+        person = self.current_person_details
+        person_name = person.get("name", "Unknown")
+        movie_credits = person.get("movie_credits", {}).get("cast", [])
+        tv_credits = person.get("tv_credits", {}).get("cast", [])
+        seen_m = set()
+        unique_movies = []
+        for m in movie_credits:
+            if m.get("id") not in seen_m:
+                seen_m.add(m.get("id"))
+                unique_movies.append(m)
+        seen_t = set()
+        unique_tv = []
+        for t in tv_credits:
+            if t.get("id") not in seen_t:
+                seen_t.add(t.get("id"))
+                unique_tv.append(t)
+
+        def score(x):
+            pop = x.get("popularity", 0) or 0
+            votes = x.get("vote_count", 0) or 0
+            return votes * 10 + pop
+
+        unique_movies.sort(key=score, reverse=True)
+        unique_tv.sort(key=score, reverse=True)
+        top_movies = unique_movies[:10]
+        top_tv = unique_tv[:10]
+
+        menu = []
+        if top_movies:
+            menu.append((f"── MOVIES ({len(top_movies)}) ──", None))
+            for m in top_movies:
+                title = m.get("title", "N/A")
+                year = (m.get("release_date") or "")[:4]
+                rating = m.get("vote_average", 0) or 0
+                year_str = f" ({year})" if year else ""
+                rating_str = f" ★{rating:.1f}" if rating > 0 else ""
+                menu.append((f"🎬 {title}{year_str}{rating_str}", ("movie", m)))
+        if top_tv:
+            menu.append((f"── TV SERIES ({len(top_tv)}) ──", None))
+            for t in top_tv:
+                name = t.get("name", "N/A")
+                year = (t.get("first_air_date") or "")[:4]
+                rating = t.get("vote_average", 0) or 0
+                year_str = f" ({year})" if year else ""
+                rating_str = f" ★{rating:.1f}" if rating > 0 else ""
+                menu.append((f"📺 {name}{year_str}{rating_str}", ("tv", t)))
+        if not menu:
+            self["status"].setText(f"No filmography for {person_name}")
+            return
+
+        def media_selected(choice):
+            if not choice or choice[1] is None:
+                return
+            media_type, media_data = choice[1]
+            media_id = media_data.get("id")
+            title = media_data.get("title") or media_data.get("name", "Unknown")
+            if media_id:
+                self["status"].setText(f"Loading {title}...")
+                threading.Thread(
+                    target=self._load_media_from_filmography,
+                    args=(media_id, media_type, title),
+                    daemon=True
+                ).start()
+
+        self.session.openWithCallback(
+            media_selected, ChoiceBox,
+            title=f"Filmography: {person_name}",
+            list=menu
+        )
+
+    def _load_media_from_filmography(self, media_id, media_type, media_title):
+        api_key = config.plugins.ciefpepginfo.tmdb_api_key.value.strip()
+        if not api_key:
+            self["status"].setText("TMDB API key not set")
+            return
+        try:
+            details = _tmdb_details(media_id, media_type, api_key)
+            if not details:
+                self["status"].setText("Error loading media details")
+                return
+            if not self._saved_media_state:
+                self._saved_media_state = {
+                    "media_details": self.current_media_details,
+                    "media_type": self.current_media_type,
+                }
+            self.current_media_details = details
+            self.current_media_type = media_type
+            self._update_ui_with_tmdb(details, media_type)
+            person_name = getattr(self, 'current_person_name', '')
+            if person_name:
+                self["epg_title"].setText(f"From filmography: {person_name}")
+            self["status"].setText(f"Loaded: {media_title} ✓")
+        except Exception as e:
+            print("[CiefpEPGinfo] load media from filmography error:", e)
+            self["status"].setText("Error loading media")
+
+    def cast_explore(self):
+        if not self.current_media_details:
+            self["status"].setText("No TMDB info loaded")
+            return
+        credits = self.current_media_details.get("credits", {})
+        cast = credits.get("cast", [])
+        crew = credits.get("crew", [])
+        directors = [c for c in crew if c.get("job") == "Director"]
         menu = []
         if directors:
             for d in directors[:2]:
@@ -2079,7 +2155,6 @@ class CiefpEPGinfoMain(Screen):
             if len(char) > 30:
                 char = char[:30] + "…"
             menu.append((f"{i + 1}. {name} ({char})", a))
-
         if not menu:
             self["status"].setText("No cast info")
             return
@@ -2090,7 +2165,6 @@ class CiefpEPGinfoMain(Screen):
                 name = person.get("name", "")
                 if name:
                     self["status"].setText(f"Loading: {name}...")
-                    # Asinhrono – ne blokiraj UI
                     threading.Thread(
                         target=self._load_person_async,
                         args=(name,),
@@ -2104,36 +2178,26 @@ class CiefpEPGinfoMain(Screen):
                                       list=menu)
 
     def _load_person_async(self, name):
-        """Učitaj detalje osobe i prikaži ih u istom ekranu"""
         api_key = config.plugins.ciefpepginfo.tmdb_api_key.value.strip()
         if not api_key:
             self["status"].setText("TMDB API key not set")
             return
-
-        # Pretraga osobe
         result = _tmdb_search_person(name, api_key)
         if not result:
             self["status"].setText(f"Person not found: {name}")
             return
-
         person_id = result.get("id")
         details = _tmdb_person_details(person_id, api_key)
         if not details:
             self["status"].setText(f"Person details error: {name}")
             return
-
-        # Sačuvaj prethodno stanje (film) da bismo se mogli vratiti
         self._saved_media_state = {
             "media_details": self.current_media_details,
             "media_type": self.current_media_type,
-            "trailer_id": self.current_trailer_id,
         }
-
-        # Prikaži osobu
         self._display_person_info(details)
 
     def _display_person_info(self, details):
-        """Prikaz profila glumca u istom ekranu (zamenjuje sadržaj)"""
         person_id = details.get("id")
         name = details.get("name", "N/A")
         known_for = details.get("known_for_department", "")
@@ -2142,33 +2206,26 @@ class CiefpEPGinfoMain(Screen):
         place_of_birth = details.get("place_of_birth", "")
         biography = details.get("biography", "").strip()
 
-        # === PRVO IZRAČUNAJ BROJ FILMOVA I SERIJA ===
         movie_credits = details.get("movie_credits", {}).get("cast", [])
         tv_credits = details.get("tv_credits", {}).get("cast", [])
-
-        # Ukloni duplikate po ID-u (glumac može biti u više uloga u istom filmu)
         movie_ids = set()
         unique_movies = []
         for m in movie_credits:
             if m.get("id") not in movie_ids:
                 movie_ids.add(m.get("id"))
                 unique_movies.append(m)
-
         tv_ids = set()
         unique_tv = []
         for t in tv_credits:
             if t.get("id") not in tv_ids:
                 tv_ids.add(t.get("id"))
                 unique_tv.append(t)
-
         movie_count = len(unique_movies)
         tv_count = len(unique_tv)
 
-        # === NASLOV: ime i prezime (+ poznat po) ===
         self["title"].setText(name + (f"  ({known_for})" if known_for else ""))
         self["epg_title"].setText("Actor Profile")
 
-        # === ROĐENJE / MESTO ===
         if birthday:
             try:
                 y, m, d = birthday.split("-")
@@ -2180,13 +2237,9 @@ class CiefpEPGinfoMain(Screen):
 
         self["duration"].setText(f"Born: {pretty_birth}")
         self["rating"].setText(f"Place: {place_of_birth}" if place_of_birth else "")
-        # SADA movie_count i tv_count postoje
-        self["imdb_rating"].setText(
-            f"Movies: {movie_count}  |  TV Series: {tv_count}"
-        )
+        self["imdb_rating"].setText(f"Movies: {movie_count}  |  TV Series: {tv_count}")
         self["director"].setText("")
 
-        # === ŽANR: ako je preminuo ===
         if deathday:
             try:
                 y, m, d = deathday.split("-")
@@ -2197,7 +2250,6 @@ class CiefpEPGinfoMain(Screen):
         else:
             self["genres"].setText("")
 
-        # === PLOT → Biography ===
         if biography:
             biography = re.sub(r"\n{2,}", "\n", biography).strip()
             MAX_BIO = 700
@@ -2212,21 +2264,18 @@ class CiefpEPGinfoMain(Screen):
                     else:
                         biography = biography[:MAX_BIO] + " ..."
             self["plot"].setText("Biography:\n" + biography)
-
-            # === DODAJ PREVOD BIOGRAPHY ===
             if (config.plugins.ciefpepginfo.translate_epg.value
                     and config.plugins.ciefpepginfo.translate_biography.value
                     and config.plugins.ciefpepginfo.groq_api_key.value.strip()):
                 target = config.plugins.ciefpepginfo.translate_to.value
                 threading.Thread(
-                    target=self._translate_biography_async,  # ✅ prava metoda
-                    args=(biography, target),  # ✅ prava promenljiva
+                    target=self._translate_biography_async,
+                    args=(biography, target),
                     daemon=True
                 ).start()
-        # === CAST HEADER ===
+
         self["cast_header"].setText("Known For:")
 
-        # === SORTIRANJE ===
         def movie_score(m):
             pop = m.get("popularity", 0) or 0
             votes = m.get("vote_count", 0) or 0
@@ -2239,7 +2288,6 @@ class CiefpEPGinfoMain(Screen):
 
         unique_movies.sort(key=movie_score, reverse=True)
         unique_tv.sort(key=tv_score, reverse=True)
-
         top_movies = unique_movies[:5]
         top_tv = unique_tv[:5]
 
@@ -2261,26 +2309,20 @@ class CiefpEPGinfoMain(Screen):
 
         col1_text = "\n".join([fmt_movie(m) for m in top_movies]) if top_movies else "No movies"
         col2_text = "\n".join([fmt_tv(t) for t in top_tv]) if top_tv else "No TV series"
-
-        # Dodaj naslove kolona
         col1_text = "Movies:\n" + col1_text
         col2_text = "TV Series:\n" + col2_text
-
         self["cast_col1"].setText(col1_text)
         self["cast_col2"].setText(col2_text)
 
-        # === POSTER: profilna slika glumca ===
         profile_path = details.get("profile_path")
         if profile_path:
             self._download_person_photo_async(profile_path, person_id)
         else:
             self._set_poster(PLACEHOLDER)
 
-        # === STATUS ===
-        self["status"].setText(f"Profile: {name}  (BACK to return to movie)")
+        self["status"].setText(f"Profile: {name}  (BACK to return)")
 
     def _download_person_photo_async(self, profile_path, person_id):
-        """Download profilne slike glumca"""
         if not profile_path or not person_id:
             self._set_poster(PLACEHOLDER)
             return
@@ -2314,19 +2356,20 @@ class CiefpEPGinfoMain(Screen):
         self.session.open(SettingsScreen)
 
     def keyBack(self):
-        """BACK dugme – ako smo na profilu osobe, vrati se na film"""
+        """BACK – prvo izađi iz bouquet moda, pa iz profila, pa zatvori"""
+        # 1) Ako smo u bouquet modu – vrati se na normalni EPG
+        if self.bouquet_mode:
+            self._exit_bouquet_mode()
+            return
+        # 2) Ako smo na profilu osobe – vrati se na film
         if self._saved_media_state and self._saved_media_state.get("media_details"):
-            # Vrati se na film
             self.current_media_details = self._saved_media_state["media_details"]
             self.current_media_type = self._saved_media_state["media_type"]
-            self.current_trailer_id = self._saved_media_state.get("trailer_id")
             self._saved_media_state = None
-
-            # Ponovo prikaži film
             self._update_ui_with_tmdb(self.current_media_details, self.current_media_type)
             self["status"].setText("Returned to movie")
             return
-        # Inače zatvori ekran
+        # 3) Inače zatvori ekran
         self.close()
 
 
@@ -2402,13 +2445,10 @@ class SettingsScreen(Screen):
         }
         lang = lang_map.get(lang_code, lang_code)
 
-        # Info o cache-u
         cache_count, cache_size = get_cache_info()
         cache_info = f"{cache_count} files ({cache_size:.1f} MB)"
 
-        # Novi prevod statusi
         tlang_code = config.plugins.ciefpepginfo.translate_to.value
-        # Ručno mapiranje – radi na svim Enigma2 verzijama
         tlang_map = {
             "sr": "Srpski", "hr": "Hrvatski", "bs": "Bosanski",
             "sl": "Slovenščina", "mk": "Македонски", "en": "English",
@@ -2417,7 +2457,7 @@ class SettingsScreen(Screen):
             "pl": "Polski", "cs": "Čeština", "hu": "Magyar",
             "ro": "Română", "bg": "Български", "el": "Ελληνικά",
             "tr": "Türkçe", "nl": "Nederlands", "sv": "Svenska",
-            "ar": "العربية",  # ← DODATO
+            "ar": "العربية",
         }
         tlang = tlang_map.get(tlang_code, tlang_code)
 
@@ -2443,7 +2483,7 @@ class SettingsScreen(Screen):
             f"TMDB API Key:         {tmdb}",
             f"OMDb API Key:         {omdb}",
             f"GROQ API Key:         {groq}",
-            f"GROQ Model:           {groq_model}",   # <-- NOVO
+            f"GROQ Model:           {groq_model}",
             f"Cache folder:         {cache}",
             f"Download Posters:     {cache_on}",
             f"Show IMDB Rating:     {imdb_on}",
@@ -2472,8 +2512,7 @@ class SettingsScreen(Screen):
         elif idx == 2:
             self.edit_groq()
         elif idx == 3:
-            self._cycle_groq_model()  # <-- NOVO
-        # idx 4 = cache folder (preskočeno)
+            self._cycle_groq_model()
         elif idx == 5:
             config.plugins.ciefpepginfo.cache_enabled.value = \
                 not config.plugins.ciefpepginfo.cache_enabled.value
@@ -2484,7 +2523,6 @@ class SettingsScreen(Screen):
             self.build_menu()
         elif idx == 7:
             self._cycle_language()
-        # idx 8 = separator
         elif idx == 9:
             config.plugins.ciefpepginfo.translate_epg.value = \
                 not config.plugins.ciefpepginfo.translate_epg.value
@@ -2507,17 +2545,12 @@ class SettingsScreen(Screen):
             config.plugins.ciefpepginfo.translate_titles.value = \
                 not config.plugins.ciefpepginfo.translate_titles.value
             self.build_menu()
-        # idx 15 = separator
-        # idx 16 = Cache size (info)
         elif idx == 17:
             self.clear_cache_dialog()
-        # idx 18 = separator
-        # idx 19 = Manual Update
         elif idx == 19:
             self.manual_update_dialog()
 
     def _cycle_language(self):
-        """Ciklus kroz listu jezika"""
         lang_order = [
             "en-US", "sr-RS", "hr-HR", "bs-BA", "sl-SI", "mk-MK",
             "cs-CZ", "sk-SK", "hu-HU", "ro-RO", "bg-BG", "el-GR",
@@ -2549,17 +2582,15 @@ class SettingsScreen(Screen):
         config.plugins.ciefpepginfo.language.value = nxt
         config.plugins.ciefpepginfo.language.save()
         configfile.save()
-        # Prikaži LEPO IME, ne kod
         self["status"].setText(f"Language → {lang_names.get(nxt, nxt)}")
         self.build_menu()
 
     def _cycle_translate_language(self):
-        """Ciklus kroz listu jezika prevoda"""
         lang_order = [
             "sr", "hr", "bs", "sl", "mk", "en",
             "de", "fr", "es", "it", "ru", "pt",
             "pl", "cs", "hu", "ro", "bg", "el",
-            "tr", "nl", "sv", "ar",  # ← DODATO
+            "tr", "nl", "sv", "ar",
         ]
         lang_names = {
             "sr": "Srpski", "hr": "Hrvatski", "bs": "Bosanski",
@@ -2569,7 +2600,7 @@ class SettingsScreen(Screen):
             "pl": "Polski", "cs": "Čeština", "hu": "Magyar",
             "ro": "Română", "bg": "Български", "el": "Ελληνικά",
             "tr": "Türkçe", "nl": "Nederlands", "sv": "Svenska",
-            "ar": "العربية",  # ← DODATO
+            "ar": "العربية",
         }
         cur = config.plugins.ciefpepginfo.translate_to.value
         try:
@@ -2580,13 +2611,10 @@ class SettingsScreen(Screen):
         config.plugins.ciefpepginfo.translate_to.value = nxt
         config.plugins.ciefpepginfo.translate_to.save()
         configfile.save()
-        # Prikaži LEPO IME, ne kod
         self["status"].setText(f"Translate to → {lang_names.get(nxt, nxt)}")
         self.build_menu()
 
     def _cycle_groq_model(self):
-        """Ciklus kroz listu GROQ modela"""
-        # Definiši redosled i lepa imena
         model_order = [
             "openai/gpt-oss-120b",
             "openai/gpt-oss-20b",
@@ -2618,7 +2646,6 @@ class SettingsScreen(Screen):
         config.plugins.ciefpepginfo.groq_model.value = nxt
         config.plugins.ciefpepginfo.groq_model.save()
         configfile.save()
-        # Prikaži LEPO IME, ne kod
         self["status"].setText(f"GROQ Model → {model_names.get(nxt, nxt)}")
         self.build_menu()
 
@@ -2659,7 +2686,6 @@ class SettingsScreen(Screen):
                                       text=config.plugins.ciefpepginfo.groq_api_key.value)
 
     def clear_cache_dialog(self):
-        """Dijalog za brisanje keša"""
         count, size = get_cache_info()
         if count == 0:
             self["status"].setText("Cache is already empty!")
@@ -2672,7 +2698,7 @@ class SettingsScreen(Screen):
             if result:
                 deleted, freed = clear_cache()
                 self["status"].setText(f"Deleted {deleted} files ({freed:.1f} MB)")
-                self.build_menu()  # osveži prikaz
+                self.build_menu()
             else:
                 self["status"].setText("Cancelled")
 
@@ -2681,7 +2707,6 @@ class SettingsScreen(Screen):
         )
 
     def manual_update_dialog(self):
-        """Ručna provera i instalacija update-a"""
         msg = (f"Check for updates?\n\n"
                f"This will download the latest version\n"
                f"from GitHub and restart Enigma2.")
@@ -2706,7 +2731,6 @@ class SettingsScreen(Screen):
             config.plugins.ciefpepginfo.language.save()
             config.plugins.ciefpepginfo.translate_epg.save()
             config.plugins.ciefpepginfo.translate_to.save()
-            # NOVO:
             config.plugins.ciefpepginfo.translate_epg_description.save()
             config.plugins.ciefpepginfo.translate_tmdb_overview.save()
             config.plugins.ciefpepginfo.translate_biography.save()
