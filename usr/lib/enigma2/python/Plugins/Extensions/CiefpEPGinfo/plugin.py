@@ -128,7 +128,7 @@ config.plugins.ciefpepginfo.translate_titles = ConfigYesNo(default=False)
 
 PLUGIN_NAME = "CiefpEPGinfo"
 PLUGIN_DESC = "FHD EPG Info with TMDB/OMDb enrichment"
-PLUGIN_VERSION = "1.5"
+PLUGIN_VERSION = "1.6"
 PLUGIN_DIR = os.path.dirname(__file__) if '__file__' in globals() else \
     "/usr/lib/enigma2/python/Plugins/Extensions/CiefpEPGinfo"
 
@@ -1004,16 +1004,23 @@ class CiefpEPGinfoMain(Screen):
             <widget name="plot" position="680,340" size="600,576" font="Regular;24"
                     foregroundColor="#FFFFFF" backgroundColor="#011a2e" transparent="1" valign="top"/>
 
-            <widget name="cast_header" position="680,800" size="300,30" font="Regular;24"
-                    foregroundColor="#00FFFF" backgroundColor="#011a2e" transparent="1"/>
+            <widget name="poster" position="1300,20" size="500,750" alphatest="blend" zPosition="2"/>
+            
+            <widget name="cast_img_0" position="680,780" size="120,180" scale="1" alphatest="blend" zPosition="3"/>
+            <widget name="cast_img_1" position="840,780" size="120,180" scale="1" alphatest="blend" zPosition="3"/>
+            <widget name="cast_img_2" position="1000,780" size="120,180" scale="1" alphatest="blend" zPosition="3"/>
+            <widget name="cast_img_3" position="1160,780" size="120,180" scale="1" alphatest="blend" zPosition="3"/>
+            <widget name="cast_img_4" position="1320,780" size="120,180" scale="1" alphatest="blend" zPosition="3"/>
 
-            <widget name="cast_col1" position="680,850" size="510,280" font="Regular;20"
-                    foregroundColor="#00FFFF" backgroundColor="#011a2e" transparent="1" valign="top"/>
+            <widget name="cast_name_0" position="680,980" size="160,30" font="Regular;18" halign="left" foregroundColor="#FFFFFF" backgroundColor="#011a2e" transparent="1"/>
+            <widget name="cast_name_1" position="840,980" size="160,30" font="Regular;18" halign="left" foregroundColor="#FFFFFF" backgroundColor="#011a2e" transparent="1"/>
+            <widget name="cast_name_2" position="1000,980" size="160,30" font="Regular;18" halign="left" foregroundColor="#FFFFFF" backgroundColor="#011a2e" transparent="1"/>
+            <widget name="cast_name_3" position="1160,980" size="160,30" font="Regular;18" halign="left" foregroundColor="#FFFFFF" backgroundColor="#011a2e" transparent="1"/>
+            <widget name="cast_name_4" position="1320,980" size="160,30" font="Regular;18" halign="left" foregroundColor="#FFFFFF" backgroundColor="#011a2e" transparent="1"/>
 
-            <widget name="cast_col2" position="1200,850" size="510,280" font="Regular;20"
-                    foregroundColor="#00FFFF" backgroundColor="#011a2e" transparent="1" valign="top"/>
-
-            <widget name="poster" position="1300,40" size="500,750" alphatest="blend" zPosition="2"/>
+            <widget name="director_label" position="1560,980" size="120,30" font="Regular;18" halign="right" foregroundColor="#f79102" backgroundColor="#011a2e" transparent="1"/>
+            <widget name="director_img" position="1640,780" size="120,180" scale="1" alphatest="blend" zPosition="3"/>
+            <widget name="director_name" position="1680,980" size="220,30" font="Regular;18" halign="left" foregroundColor="#f79102" backgroundColor="#011a2e" transparent="1"/>
 
             <widget name="status" position="1280,1010" size="820,40" font="Regular;22"
                     foregroundColor="#00FF00" backgroundColor="#011a2e" transparent="1" halign="left"/>
@@ -1054,11 +1061,25 @@ class CiefpEPGinfoMain(Screen):
         self["genres"] = Label("")
         self["director"] = Label("")
         self["plot"] = Label("")
-        self["cast_header"] = Label("")
-        self["cast_col1"] = Label("")
-        self["cast_col2"] = Label("")
+        # Postojeći widget-i...
         self["poster"] = Pixmap()
         self["status"] = Label("Ready")
+
+        # NOVO: Inicijalizacija za postere glumaca
+        self["cast_img_0"] = Pixmap()
+        self["cast_img_1"] = Pixmap()
+        self["cast_img_2"] = Pixmap()
+        self["cast_img_3"] = Pixmap()
+        self["cast_img_4"] = Pixmap()
+        self["director_label"] = Label("")
+        self["director_img"] = Pixmap()
+        self["director_name"] = Label("")
+
+        self["cast_name_0"] = Label("")
+        self["cast_name_1"] = Label("")
+        self["cast_name_2"] = Label("")
+        self["cast_name_3"] = Label("")
+        self["cast_name_4"] = Label("")
 
         self.epg_events = []
         self.current_event = None
@@ -1481,9 +1502,13 @@ class CiefpEPGinfoMain(Screen):
             self["genres"].setText("")
             self["director"].setText("")
             self["plot"].setText("No EPG data for this channel.")
-            self["cast_header"].setText("")
-            self["cast_col1"].setText("")
-            self["cast_col2"].setText("")
+            # Resetujemo postere glumaca
+            for i in range(5):
+                self[f"cast_img_{i}"].hide()
+                self[f"cast_name_{i}"].setText("")
+            self["director_img"].hide()
+            self["director_label"].setText("")
+            self["director_name"].setText("")
             self._set_poster(PLACEHOLDER)
             self.current_media_details = None
             self.current_media_type = None
@@ -1623,10 +1648,13 @@ class CiefpEPGinfoMain(Screen):
             self["plot"].setText("Plot:\n" + description)
         else:
             self["plot"].setText("Plot:\nNo description available.")
-
-        self["cast_header"].setText("")
-        self["cast_col1"].setText("")
-        self["cast_col2"].setText("")
+        # Resetujemo postere glumaca
+        for i in range(5):
+            self[f"cast_img_{i}"].hide()
+            self[f"cast_name_{i}"].setText("")
+        self["director_img"].hide()
+        self["director_label"].setText("")
+        self["director_name"].setText("")
 
         print(f"[CiefpDebug] ===== PROCESS EVENT =====")
         print(f"[CiefpDebug] raw_title = '{raw_title}'")
@@ -1747,20 +1775,28 @@ class CiefpEPGinfoMain(Screen):
 
         credits = details.get("credits", {})
         crew = credits.get("crew", [])
-        directors = [c["name"] for c in crew if c.get("job") == "Director"]
+        director_objs = [c for c in crew if c.get("job") == "Director"]
+        directors = [c["name"] for c in director_objs]
+
         if media_type == "tv":
-            creators = [c["name"] for c in details.get("created_by", [])]
-            if creators:
-                self["director"].setText("Created by: " + ", ".join(creators[:3]))
+            creators = details.get("created_by", [])
+            creator_names = [c["name"] for c in creators]
+            if creator_names:
+                self["director"].setText("Created by: " + ", ".join(creator_names[:3]))
+                self._load_director_image(creators[0], "Creator:")
             elif directors:
                 self["director"].setText("Director: " + ", ".join(directors[:3]))
+                self._load_director_image(director_objs[0], "Director:")
             else:
                 self["director"].setText("")
+                self._load_director_image(None)
         else:
             if directors:
                 self["director"].setText("Director: " + ", ".join(directors[:3]))
+                self._load_director_image(director_objs[0], "Director:")
             else:
                 self["director"].setText("")
+                self._load_director_image(None)
 
         overview = (details.get("overview") or "").strip()
         if overview:
@@ -1781,29 +1817,10 @@ class CiefpEPGinfoMain(Screen):
                     daemon=True
                 ).start()
 
-        cast = credits.get("cast", [])[:10]
-        if cast:
-            self["cast_header"].setText("Cast:")
-            first_row = cast[:5]
-            second_row = cast[5:10]
-
-            def format_actor(actor):
-                name = actor.get("name", "").strip()
-                char = actor.get("character", "").strip()
-                if len(char) > 30:
-                    char = char[:30] + "…"
-                if char:
-                    return f"• {name} as {char}"
-                return f"• {name}"
-
-            col1_text = "\n".join([format_actor(a) for a in first_row]) if first_row else ""
-            self["cast_col1"].setText(col1_text)
-            col2_text = "\n".join([format_actor(a) for a in second_row]) if second_row else ""
-            self["cast_col2"].setText(col2_text)
-        else:
-            self["cast_header"].setText("")
-            self["cast_col1"].setText("")
-            self["cast_col2"].setText("")
+        # --- NOVI DEO: Posteri glumaca umesto tekstualnog prikaza ---
+        cast = credits.get("cast", [])
+        self._load_cast_images(cast)
+        # -----------------------------------------------------------
 
         # ← IZMENA: trajler fetch uklonjen
 
@@ -1832,7 +1849,137 @@ class CiefpEPGinfoMain(Screen):
         except Exception:
             self["imdb_rating"].setText("IMDB: N/A")
 
-    # ← IZMENA: _fetch_trailer_async je UKLONJEN
+    def _load_cast_images(self, cast):
+        """Učitava profile slike za prvih 5 glumaca."""
+        # Prvo resetujemo sve widget-e
+        for i in range(5):
+            self[f"cast_img_{i}"].hide()
+            self[f"cast_name_{i}"].setText("")
+
+        if not cast:
+            return
+
+        # Uzimamo prvih 5 glumaca
+        top_cast = cast[:5]
+
+        for idx, actor in enumerate(top_cast):
+            name = actor.get("name", "")
+            profile_path = actor.get("profile_path")
+
+            # Postavljamo ime glumca
+            self[f"cast_name_{idx}"].setText(name)
+
+            if profile_path:
+                # Pokrećemo asinhrono preuzimanje slike
+                threading.Thread(
+                    target=self._download_cast_image_async,
+                    args=(profile_path, idx),
+                    daemon=True
+                ).start()
+            else:
+                # Ako nema slike, prikazujemo placeholder
+                self._set_cast_placeholder(idx)
+
+    def _download_cast_image_async(self, profile_path, idx):
+        """Preuzima sliku glumca i postavlja je na odgovarajući widget."""
+        if not profile_path or not config.plugins.ciefpepginfo.cache_enabled.value:
+            self._set_cast_placeholder(idx)
+            return
+
+        def worker():
+            try:
+                folder = ensure_cache_folder()
+                fname = os.path.join(
+                    folder,
+                    f"cast_{os.path.basename(profile_path)}"
+                )
+                if not os.path.exists(fname):
+                    url = "https://image.tmdb.org/t/p/w185" + profile_path
+                    ctx = ssl.create_default_context()
+                    ctx.check_hostname = False
+                    ctx.verify_mode = ssl.CERT_NONE
+                    data = urllib.request.urlopen(url, context=ctx, timeout=12).read()
+                    with open(fname, "wb") as f:
+                        f.write(data)
+
+                # Učitavamo sliku bez .scale() metode
+                px = load_pixmap_safe(fname)
+                if px and self[f"cast_img_{idx}"].instance:
+                    self[f"cast_img_{idx}"].instance.setPixmap(px)
+                    self[f"cast_img_{idx}"].show()
+                else:
+                    self._set_cast_placeholder(idx)
+            except Exception as e:
+                print(f"[CiefpEPGinfo] cast image error: {e}")
+                self._set_cast_placeholder(idx)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _set_cast_placeholder(self, idx):
+        """Postavlja placeholder sliku za glumca."""
+        px = load_pixmap_safe(PLACEHOLDER)
+        if px and self[f"cast_img_{idx}"].instance:
+            try:
+                self[f"cast_img_{idx}"].instance.setPixmap(px)
+                self[f"cast_img_{idx}"].show()
+            except Exception:
+                pass
+
+    def _load_director_image(self, person_obj, role_label="Director:"):
+        """Učitava sliku režisera/kreatora."""
+        self["director_img"].hide()
+        self["director_label"].setText("")
+        self["director_name"].setText("")
+
+        if not person_obj:
+            return
+
+        name = person_obj.get("name", "")
+        profile_path = person_obj.get("profile_path")
+
+        self["director_label"].setText(role_label)
+        self["director_name"].setText(name)
+
+        if profile_path:
+            self._download_director_image_async(profile_path)
+        else:
+            px = load_pixmap_safe(PLACEHOLDER)
+            if px and self["director_img"].instance:
+                try:
+                    self["director_img"].instance.setPixmap(px)
+                    self["director_img"].show()
+                except Exception:
+                    pass
+
+    def _download_director_image_async(self, profile_path):
+        """Preuzima sliku režisera i postavlja je na widget."""
+        if not profile_path or not config.plugins.ciefpepginfo.cache_enabled.value:
+            return
+
+        def worker():
+            try:
+                folder = ensure_cache_folder()
+                fname = os.path.join(
+                    folder,
+                    f"cast_{os.path.basename(profile_path)}"
+                )
+                if not os.path.exists(fname):
+                    url = "https://image.tmdb.org/t/p/w185" + profile_path
+                    ctx = ssl.create_default_context()
+                    ctx.check_hostname = False
+                    ctx.verify_mode = ssl.CERT_NONE
+                    data = urllib.request.urlopen(url, context=ctx, timeout=12).read()
+                    with open(fname, "wb") as f:
+                        f.write(data)
+
+                px = load_pixmap_safe(fname)
+                if px and self["director_img"].instance:
+                    self["director_img"].instance.setPixmap(px)
+                    self["director_img"].show()
+            except Exception as e:
+                print(f"[CiefpEPGinfo] director image error: {e}")
+
+        threading.Thread(target=worker, daemon=True).start()
 
     # ---------- POSTER ----------
     def _download_poster_async(self, poster_path, media_id, media_type):
@@ -2206,6 +2353,14 @@ class CiefpEPGinfoMain(Screen):
         place_of_birth = details.get("place_of_birth", "")
         biography = details.get("biography", "").strip()
 
+        # Resetujemo postere glumaca (jer prikazujemo profil osobe, ne film)
+        for i in range(5):
+            self[f"cast_img_{i}"].hide()
+            self[f"cast_name_{i}"].setText("")
+        self["director_img"].hide()
+        self["director_label"].setText("")
+        self["director_name"].setText("")
+
         movie_credits = details.get("movie_credits", {}).get("cast", [])
         tv_credits = details.get("tv_credits", {}).get("cast", [])
         movie_ids = set()
@@ -2274,53 +2429,16 @@ class CiefpEPGinfoMain(Screen):
                     daemon=True
                 ).start()
 
-        self["cast_header"].setText("Known For:")
-
-        def movie_score(m):
-            pop = m.get("popularity", 0) or 0
-            votes = m.get("vote_count", 0) or 0
-            return votes * 10 + pop
-
-        def tv_score(t):
-            pop = t.get("popularity", 0) or 0
-            votes = t.get("vote_count", 0) or 0
-            return votes * 10 + pop
-
-        unique_movies.sort(key=movie_score, reverse=True)
-        unique_tv.sort(key=tv_score, reverse=True)
-        top_movies = unique_movies[:5]
-        top_tv = unique_tv[:5]
-
-        def fmt_movie(m):
-            title = m.get("title", "N/A")
-            year = (m.get("release_date") or "")[:4]
-            rating = m.get("vote_average", 0) or 0
-            year_str = f" ({year})" if year else ""
-            rating_str = f" {rating:.1f}★" if rating > 0 else ""
-            return f"• {title}{year_str}{rating_str}"
-
-        def fmt_tv(t):
-            name = t.get("name", "N/A")
-            year = (t.get("first_air_date") or "")[:4]
-            rating = t.get("vote_average", 0) or 0
-            year_str = f" ({year})" if year else ""
-            rating_str = f" {rating:.1f}★" if rating > 0 else ""
-            return f"• {name}{year_str}{rating_str}"
-
-        col1_text = "\n".join([fmt_movie(m) for m in top_movies]) if top_movies else "No movies"
-        col2_text = "\n".join([fmt_tv(t) for t in top_tv]) if top_tv else "No TV series"
-        col1_text = "Movies:\n" + col1_text
-        col2_text = "TV Series:\n" + col2_text
-        self["cast_col1"].setText(col1_text)
-        self["cast_col2"].setText(col2_text)
-
         profile_path = details.get("profile_path")
         if profile_path:
             self._download_person_photo_async(profile_path, person_id)
         else:
             self._set_poster(PLACEHOLDER)
 
-        self["status"].setText(f"Profile: {name}  (BACK to return)")
+        # Jedan status na kraju – sa svim informacijama
+        self["status"].setText(
+            f"Profile: {name}  (Movies: {movie_count}, TV: {tv_count})  (BACK to return)"
+        )
 
     def _download_person_photo_async(self, profile_path, person_id):
         if not profile_path or not person_id:
